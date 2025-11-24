@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css?family=Comfortaa');
+
+html, body {
+  margin: 0;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  font-family: 'Comfortaa', cursive;
+  background-color: #111; /* Matches Game Background */
+}
+
+#instructions {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  background-color: rgba(0,0,0,0.7);
+  z-index: 999;
+}
+
+.content {
+  text-align: center;
+  color: #fff;
+}
+
+p {
+  font-size: 20px;
+  margin-bottom: 20px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #00ff00; /* Neon text */
+}
+
+.start-btn {
+    font-size: 30px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 15px 40px;
+    border: 3px solid #00ff00;
+    color: #00ff00;
+    background: transparent;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    border-radius: 50px;
+}
+
+.start-btn:hover {
+    background: #00ff00;
+    color: #000;
+    box-shadow: 0 0 20px #00ff00;
+}
+
+#score {
+  position: absolute;
+  color: #fff;
+  text-align: center;
+  font-size: 10vh;
+  font-family: 'Comfortaa', cursive;
+  top: 10%;
+  width: 100%;
+  pointer-events: none;
+  opacity: 0.3;
+}
