@@ -9,6 +9,8 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
+// GLOBAL LIGHT (To track the stack)
+let dirLight; 
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
@@ -24,8 +26,8 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-// CHANGE: Increased to 40 to prevent edge clipping on all aspect ratios
-const ZOOM = 40; 
+// ZOOM: 35 is the Sweet Spot (Not too close, not too far)
+const ZOOM = 35; 
 const TRAVEL_DISTANCE = 25; 
 
 // --- STATE ---
@@ -65,10 +67,12 @@ function init() {
   const aspect = window.innerWidth / window.innerHeight;
   const d = ZOOM; 
   
+  // FIX: DEEP FRUSTUM (Near -100 to Far 2000)
+  // This guarantees blocks never clip out, even if they fall deep or swing wide
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
-    1, 1000 
+    -100, 2000 
   );
   
   camera.position.set(4, 4, 4);
@@ -86,20 +90,24 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // SHADOW TUNING (Fixes fading/artifacts)
-  dirLight.shadow.bias = -0.0005; // Removes shadow acne/lines
-  const shadowD = 200; 
+  // SHADOW BOX (Massive)
+  const shadowD = 250; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
   dirLight.shadow.camera.top = shadowD;
   dirLight.shadow.camera.bottom = -shadowD;
+  dirLight.shadow.camera.near = 0.1;
+  dirLight.shadow.camera.far = 2000;
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
+  
   scene.add(dirLight);
+  // CRITICAL: Add Target to scene so we can move it
+  scene.add(dirLight.target);
 
   // Base Blocks
   addLayer(0, 0, originalBoxSize, originalBoxSize);
@@ -141,6 +149,12 @@ function startGame() {
   if (camera) {
     camera.position.set(4, 4, 4);
     camera.lookAt(0, 0, 0);
+    
+    // Reset Light
+    if(dirLight) {
+        dirLight.position.set(20, 60, 20);
+        dirLight.target.position.set(0, 0, 0);
+    }
   }
 }
 
@@ -176,13 +190,15 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  let mass = falls ? 0.5 : 0; // Dead Weight
+  // Mass 0.5 (Perfect Non-Explosive Physics)
+  let mass = falls ? 0.5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
+  // Low Spin
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -192,31 +208,17 @@ function generateBox(x, y, z, width, depth, falls) {
   return { threejs: mesh, cannonjs: body, width, depth };
 }
 
-// --- CORE CHANGE: DESTROY & REBUILD STRATEGY ---
 function cutBox(topLayer, overlap, size, delta) {
   const direction = topLayer.direction;
   const newWidth = direction == "x" ? overlap : topLayer.width;
   const newDepth = direction == "z" ? overlap : topLayer.depth;
 
-  // 1. Remove the OLD Visual Mesh & Physics Body
-  scene.remove(topLayer.threejs);
-  world.remove(topLayer.cannonjs);
+  topLayer.width = newWidth;
+  topLayer.depth = newDepth;
+  topLayer.threejs.scale[direction] = overlap / size;
+  topLayer.threejs.position[direction] -= delta / 2;
+  topLayer.cannonjs.position[direction] -= delta / 2;
 
-  // 2. Calculate New Position
-  const newX = direction == "x" ? topLayer.threejs.position.x - (delta / 2) : topLayer.threejs.position.x;
-  const newZ = direction == "z" ? topLayer.threejs.position.z - (delta / 2) : topLayer.threejs.position.z;
-  const newY = topLayer.threejs.position.y;
-
-  // 3. Create BRAND NEW Block with Exact Dimensions
-  // This prevents scaling artifacts and "Invisible Edge" bugs
-  const newLayer = generateBox(newX, newY, newZ, newWidth, newDepth, false);
-  newLayer.direction = direction;
-  
-  // 4. Replace the top stack item with the new, clean block
-  stack.pop();
-  stack.push(newLayer);
-
-  // 5. Spawn Debris
   const overhangShift = (overlap / 2 + (size - overlap) / 2) * Math.sign(delta);
   const overhangX = direction == "x" ? topLayer.threejs.position.x + overhangShift : topLayer.threejs.position.x;
   const overhangZ = direction == "z" ? topLayer.threejs.position.z + overhangShift : topLayer.threejs.position.z;
@@ -233,6 +235,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
+      // --- SPEED ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -249,6 +252,14 @@ function animation() {
 
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
+
+    // --- THE INVISIBLE FIX (Dynamic Light Tracking) ---
+    if (dirLight) {
+        // Keep the light 60 units above the camera focus
+        dirLight.position.y = camera.position.y + 60;
+        // Keep the target pointed at the camera focus (the stack top)
+        dirLight.target.position.y = camera.position.y;
+    }
 
     updatePhysics(timePassed);
     renderer.render(scene, camera);
@@ -305,8 +316,8 @@ function splitBlockAndAddNextOneIfOverlaps() {
     
     const nextX = direction == "x" ? topLayer.threejs.position.x : -30;
     const nextZ = direction == "z" ? topLayer.threejs.position.z : -30;
-    const newWidth = topLayer.width; // Using the UPDATED geometry width
-    const newDepth = topLayer.depth; // Using the UPDATED geometry depth
+    const newWidth = topLayer.width;
+    const newDepth = topLayer.depth;
     const nextDirection = direction == "x" ? "z" : "x";
     
     if (scoreElement) scoreElement.innerText = stack.length - 1;
