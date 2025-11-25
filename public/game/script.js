@@ -16,8 +16,8 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-const boxHeight = 35;          // Thick Slabs
-const originalBoxSize = 75;   // Massive Blocks
+const boxHeight = 25;          // Thick Slabs
+const originalBoxSize = 65;   // Massive Blocks
 
 // SPEED
 const BASE_SPEED = 0.0005;      
