@@ -57,7 +57,7 @@ function init() {
 
   // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(0, 50, 0); 
+  world.gravity.set(50, 100, 50); 
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
