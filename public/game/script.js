@@ -24,22 +24,16 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-// CHANGE 1: CAMERA WIDTH (Was 40 -> Now 60)
-// Essential to keep the Wide Travel blocks inside the screen
-const CAMERA_WIDTH = 60;       
-const TRAVEL_DISTANCE = 25;    
+const ZOOM = 2; // Zoom Factor
+const CAMERA_WIDTH = 35; // Wide view
+const TRAVEL_DISTANCE = 25; // Wide Travel
 
 // --- STATE ---
 let autoplay = false;
 let gameEnded;
 let isPlaying = false;
 let animationId = null;
-
-// COLOR STATE
-let hue = 230;          
-let paletteCount = 0;   
-let isDarkening = true; 
-let targetBgColor = new THREE.Color(); 
+let hue = 200; // Start Blue
 
 const scoreElement = document.getElementById("score");
 const instructionsElement = document.getElementById("instructions");
@@ -53,10 +47,7 @@ function init() {
   lastTime = 0;
   stack = [];
   overhangs = [];
-  
-  hue = 230;
-  paletteCount = 0;
-  isDarkening = true;
+  hue = 200; 
 
   clickOffsets = [];
   startTime = 0;
@@ -67,52 +58,56 @@ function init() {
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
-  // 2. CAMERA
-  const aspect = window.innerWidth / window.innerHeight;
-  const height = CAMERA_WIDTH / aspect;
+  // 2. SCENE
+  scene = new THREE.Scene();
+  // NOTE: No background color here. We use CSS for the premium gradient.
 
-  // CHANGE 2: FAR PLANE (Was 100 -> Now 1000)
-  // Prevents cutting off tall towers or deep debris
+  // 3. CAMERA (FIXED CLIPPING BUG)
+  const aspect = window.innerWidth / window.innerHeight;
+  const d = 35; // Viewport Size
+  
+  // FIX: Far plane set to 1000 (was 100). 
+  // This stops blocks from disappearing when they go deep/far.
   camera = new THREE.OrthographicCamera(
-    CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 1000
+    -d * aspect, d * aspect, 
+    d, -d, 
+    1, 1000 
   );
   
   camera.position.set(4, 4, 4);
   camera.lookAt(0, 0, 0);
 
-  // 3. SCENE
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color();
-  setTargetBackground(); 
-  scene.background.copy(targetBgColor);
+  // 4. RENDERER
+  // Alpha: true allows the CSS background to show through
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setAnimationLoop(animation);
+  document.body.appendChild(renderer.domElement);
+  
+  // Initial Background Set
+  updateBackground();
 
-  addLayer(0, 0, originalBoxSize, originalBoxSize);
-  addLayer(-20, 0, originalBoxSize, originalBoxSize, "x");
-
+  // 5. LIGHTS
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  // LIGHTING
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  dirLight.position.set(50, 100, 50); 
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // CHANGE 3: SHADOW BOX (Was 150 -> Now 200)
-  // Total coverage guarantee
-  const d = 200; 
-  dirLight.shadow.camera.left = -d;
-  dirLight.shadow.camera.right = d;
-  dirLight.shadow.camera.top = d;
-  dirLight.shadow.camera.bottom = -d;
-  
+  // SHADOW BOX (Maximized)
+  const shadowD = 150; 
+  dirLight.shadow.camera.left = -shadowD;
+  dirLight.shadow.camera.right = shadowD;
+  dirLight.shadow.camera.top = shadowD;
+  dirLight.shadow.camera.bottom = -shadowD;
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   scene.add(dirLight);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setAnimationLoop(animation);
-  document.body.appendChild(renderer.domElement);
+  // Base Blocks
+  addLayer(0, 0, originalBoxSize, originalBoxSize);
+  addLayer(-30, 0, originalBoxSize, originalBoxSize, "x"); // Start far off-screen
 }
 
 function startGame() {
@@ -122,17 +117,14 @@ function startGame() {
   lastTime = 0;
   stack = [];
   overhangs = [];
-  
-  hue = 230;
-  paletteCount = 0;
-  isDarkening = true;
-  setTargetBackground();
+  hue = 200;
   
   clickOffsets = [];
   startTime = Date.now();
 
   if (instructionsElement) instructionsElement.style.display = "none";
   if (scoreElement) scoreElement.innerText = 0;
+  updateBackground();
 
   if (world) {
     while (world.bodies.length > 0) {
@@ -146,47 +138,23 @@ function startGame() {
       scene.remove(mesh);
     }
     
-    scene.background.copy(targetBgColor);
     addLayer(0, 0, originalBoxSize, originalBoxSize);
-    addLayer(-20, 0, originalBoxSize, originalBoxSize, "x");
+    addLayer(-30, 0, originalBoxSize, originalBoxSize, "x");
   }
 
   if (camera) {
-    const aspect = window.innerWidth / window.innerHeight;
-    const height = CAMERA_WIDTH / aspect;
-    camera.left = CAMERA_WIDTH / -2;
-    camera.right = CAMERA_WIDTH / 2;
-    camera.top = height / 2;
-    camera.bottom = height / -2;
     camera.position.set(4, 4, 4);
     camera.lookAt(0, 0, 0);
-    camera.updateProjectionMatrix();
   }
 }
 
-// --- COLOR LOGIC ---
-function getCurrentBlockColor() {
-    let lightness;
-    if (isDarkening) {
-        lightness = 75 - (paletteCount * 5);
-    } else {
-        lightness = 60 + (paletteCount * 5);
-    }
-    return new THREE.Color(`hsl(${hue}, 70%, ${lightness}%)`);
-}
-
-function setTargetBackground() {
-    targetBgColor.setHSL(hue / 360, 0.3, 0.85);
-}
-
-function cycleColor() {
-    paletteCount++;
-    if (paletteCount >= 4) {
-        paletteCount = 0;
-        hue += 30; 
-        isDarkening = !isDarkening; 
-        setTargetBackground(); 
-    }
+// --- VISUALS ---
+function updateBackground() {
+    // Premium Gradient Logic (Michael's Style)
+    const h1 = hue % 360;
+    const h2 = (hue + 40) % 360;
+    document.body.style.background = `linear-gradient(180deg, hsl(${h1}, 50%, 80%) 0%, hsl(${h2}, 50%, 90%) 100%)`;
+    if(scoreElement) scoreElement.style.color = `hsl(${h1}, 30%, 30%)`;
 }
 
 function addLayer(x, z, width, depth, direction) {
@@ -204,7 +172,8 @@ function addOverhang(x, z, width, depth) {
 
 function generateBox(x, y, z, width, depth, falls) {
   const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
-  const color = getCurrentBlockColor();
+  // Michael's Color Logic
+  const color = new THREE.Color(`hsl(${hue}, 60%, 65%)`);
   const material = new THREE.MeshLambertMaterial({ color });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z);
@@ -214,6 +183,7 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
+  // Mass 5 (Dead weight)
   let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
@@ -221,6 +191,7 @@ function generateBox(x, y, z, width, depth, falls) {
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
+  // Low spin
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -257,6 +228,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
+      // --- RAMPED SPEED ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -269,10 +241,6 @@ function animation() {
         topLayer.threejs.position.z = movePos;
         topLayer.cannonjs.position.z = movePos;
       }
-    }
-
-    if (scene.background) {
-        scene.background.lerp(targetBgColor, 0.02);
     }
 
     const targetY = boxHeight * (stack.length - 2) + 4;
@@ -328,11 +296,11 @@ function splitBlockAndAddNextOneIfOverlaps() {
   if (overlap > 0) {
     cutBox(topLayer, overlap, size, delta);
     clickOffsets.push(delta);
+    hue += 4;
+    updateBackground(); // Update Gradient
     
-    cycleColor();
-    
-    const nextX = direction == "x" ? topLayer.threejs.position.x : -20;
-    const nextZ = direction == "z" ? topLayer.threejs.position.z : -20;
+    const nextX = direction == "x" ? topLayer.threejs.position.x : -30;
+    const nextZ = direction == "z" ? topLayer.threejs.position.z : -30;
     const newWidth = topLayer.width;
     const newDepth = topLayer.depth;
     const nextDirection = direction == "x" ? "z" : "x";
@@ -359,11 +327,11 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const height = CAMERA_WIDTH / aspect;
-  camera.left = CAMERA_WIDTH / -2;
-  camera.right = CAMERA_WIDTH / 2;
-  camera.top = height / 2;
-  camera.bottom = height / -2;
+  const d = 35;
+  camera.left = -d * aspect;
+  camera.right = d * aspect;
+  camera.top = d;
+  camera.bottom = -d;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
