@@ -9,7 +9,6 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
-let dirLight; // GLOBAL LIGHT ACCESS
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
@@ -25,9 +24,10 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-const ZOOM = 2; 
-const CAMERA_WIDTH = 35; 
-const TRAVEL_DISTANCE = 25; 
+// CHANGE: Switched to "Scale Factor" (Michael's Logic)
+// 33 is the perfect Zoom Out (Michael used 20, we want 15-20% wider)
+const ZOOM_SCALE = 33;       
+const TRAVEL_DISTANCE = 25;    
 
 // --- STATE ---
 let autoplay = false;
@@ -61,11 +61,14 @@ function init() {
 
   // 2. SCENE
   scene = new THREE.Scene();
+  // Background handled by CSS gradient
 
-  // 3. CAMERA
+  // 3. CAMERA (MICHAEL'S LOGIC RESTORED)
   const aspect = window.innerWidth / window.innerHeight;
-  const d = 35; 
+  const d = ZOOM_SCALE;
   
+  // This calculates bounds based on Aspect Ratio.
+  // It fixes the "Invisible Line" / "Overlap" bug.
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
@@ -87,12 +90,11 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  // DYNAMIC LIGHT SETUP
-  dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // MASSIVE SHADOW BOX
+  // SHADOW BOX (Massive)
   const shadowD = 200; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
@@ -101,9 +103,6 @@ function init() {
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   scene.add(dirLight);
-  
-  // Add Light Target to Scene so we can move it
-  scene.add(dirLight.target);
 
   // Base Blocks
   addLayer(0, 0, originalBoxSize, originalBoxSize);
@@ -145,12 +144,6 @@ function startGame() {
   if (camera) {
     camera.position.set(4, 4, 4);
     camera.lookAt(0, 0, 0);
-    
-    // Reset Light
-    if(dirLight) {
-        dirLight.position.set(20, 60, 20);
-        dirLight.target.position.set(0, 0, 0);
-    }
   }
 }
 
@@ -186,14 +179,15 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 0.5 (No Explosion)
-  let mass = falls ? 0.5 : 0;
+  // Mass 5 (Dead Weight)
+  let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
+  // Low Spin
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -230,6 +224,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
+      // --- RAMPED SPEED ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -246,14 +241,6 @@ function animation() {
 
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
-
-    // FIX: LIGHT FOLLOWING CAMERA
-    if (dirLight) {
-        // Light stays 60 units above the current camera focus
-        dirLight.position.y = camera.position.y + 60;
-        // Target stays at the level of the stack
-        dirLight.target.position.y = camera.position.y;
-    }
 
     updatePhysics(timePassed);
     renderer.render(scene, camera);
@@ -336,7 +323,8 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const d = 35;
+  const d = ZOOM_SCALE;
+  // THIS IS THE KEY FIX:
   camera.left = -d * aspect;
   camera.right = d * aspect;
   camera.top = d;
