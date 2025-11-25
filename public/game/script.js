@@ -9,7 +9,6 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
-// FIX: GLOBAL LIGHT VARIABLE (Accessible by animation loop)
 let dirLight; 
 
 // --- SENTINEL BIOMETRICS ---
@@ -17,8 +16,9 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-const boxHeight = 1.5; 
-const originalBoxSize = 6.5; 
+// CHANGE 1: 3X SIZE SCALING
+const boxHeight = 3;          // Thicker slabs
+const originalBoxSize = 15;   // Massive base size
 
 // SPEED CONFIGURATION
 const BASE_SPEED = 0.0005;      
@@ -26,9 +26,10 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-const ZOOM = 2; 
-const CAMERA_WIDTH = 35; // Wide View
-const TRAVEL_DISTANCE = 25; 
+// CHANGE: ZOOM OUT (To fit 3x blocks)
+const CAMERA_WIDTH = 90;       
+// CHANGE: WIDER TRAVEL (To match block scale)
+const TRAVEL_DISTANCE = 50;    
 
 // --- STATE ---
 let autoplay = false;
@@ -65,13 +66,13 @@ function init() {
 
   // 3. CAMERA
   const aspect = window.innerWidth / window.innerHeight;
-  const d = 35; 
+  const d = CAMERA_WIDTH; 
   
-  // Far plane 1000 ensures deep rendering
+  // DEEP FRUSTUM (Near -100, Far 3000)
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
-    1, 1000 
+    -100, 3000 
   );
   
   camera.position.set(4, 4, 4);
@@ -89,27 +90,29 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  // FIX: ASSIGN TO GLOBAL VARIABLE
+  // FIX: MOVED LIGHT HIGHER FOR HUGE BLOCKS
   dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(20, 60, 20); 
+  dirLight.position.set(50, 200, 50); 
   dirLight.castShadow = true;
   
-  // SHADOW BOX (Massive coverage)
-  const shadowD = 200; 
+  // FIX: MASSIVE SHADOW BOX (400)
+  // Covers the 3x larger travel distance so nothing fades out
+  const shadowD = 400; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
   dirLight.shadow.camera.top = shadowD;
   dirLight.shadow.camera.bottom = -shadowD;
+  dirLight.shadow.camera.near = 0.1;
+  dirLight.shadow.camera.far = 3000;
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   
   scene.add(dirLight);
-  // CRITICAL: Add target to scene to move it
   scene.add(dirLight.target);
 
   // Base Blocks
   addLayer(0, 0, originalBoxSize, originalBoxSize);
-  addLayer(-30, 0, originalBoxSize, originalBoxSize, "x");
+  addLayer(-50, 0, originalBoxSize, originalBoxSize, "x");
 }
 
 function startGame() {
@@ -141,16 +144,15 @@ function startGame() {
     }
     
     addLayer(0, 0, originalBoxSize, originalBoxSize);
-    addLayer(-30, 0, originalBoxSize, originalBoxSize, "x");
+    addLayer(-50, 0, originalBoxSize, originalBoxSize, "x");
   }
 
   if (camera) {
     camera.position.set(4, 4, 4);
     camera.lookAt(0, 0, 0);
     
-    // Reset Light Position
     if(dirLight) {
-        dirLight.position.set(20, 60, 20);
+        dirLight.position.set(50, 200, 50);
         dirLight.target.position.set(0, 0, 0);
     }
   }
@@ -188,8 +190,9 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 5 (Dead Weight)
-  let mass = falls ? 5 : 0;
+  // CHANGE 2: 97% MASS REDUCTION
+  // Mass 0.1 = Almost zero separation force
+  let mass = falls ? 0.1 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -197,8 +200,8 @@ function generateBox(x, y, z, width, depth, falls) {
   body.position.set(x, y, z);
   
   if (falls) {
-      const spin = Math.random() * 0.1;
-      body.angularVelocity.set(spin, 0, spin);
+      body.angularVelocity.set(0, 0, 0); // No spin
+      body.linearDamping = 0.9; // Max air resistance
   }
 
   world.addBody(body);
@@ -249,9 +252,9 @@ function animation() {
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
-    // FIX: LIGHT FOLLOWING CAMERA IS NOW ACTIVE
+    // DYNAMIC LIGHT (Fixed Invisible Bug)
     if (dirLight) {
-        dirLight.position.y = camera.position.y + 60;
+        dirLight.position.y = camera.position.y + 200;
         dirLight.target.position.y = camera.position.y;
     }
 
@@ -308,8 +311,8 @@ function splitBlockAndAddNextOneIfOverlaps() {
     hue += 4;
     updateBackground();
     
-    const nextX = direction == "x" ? topLayer.threejs.position.x : -30;
-    const nextZ = direction == "z" ? topLayer.threejs.position.z : -30;
+    const nextX = direction == "x" ? topLayer.threejs.position.x : -50;
+    const nextZ = direction == "z" ? topLayer.threejs.position.z : -50;
     const newWidth = topLayer.width;
     const newDepth = topLayer.depth;
     const nextDirection = direction == "x" ? "z" : "x";
