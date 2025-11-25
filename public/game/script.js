@@ -29,7 +29,7 @@ const SPEED_INTERVAL = 4;
 // TRAVELS 10 = high route for block
 // This makes the blocks look larger/closer without clipping
 const ZOOM_SCALE = 100;       
-const TRAVEL_DISTANCE = 50;    
+const TRAVEL_DISTANCE = 150;    
 const CAMERA_OFFSET_Y = 200;
 
 // --- STATE ---
