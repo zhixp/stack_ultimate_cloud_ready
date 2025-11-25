@@ -3,337 +3,377 @@
 window.startGame = startGame;
 window.focus();
 
-// --- CONFIGURATION ---
-const BOX_HEIGHT = 1.5;       // Chunky Slabs
-const ORIGINAL_SIZE = 6.5;    // 30% Larger Blocks
-const CAMERA_WIDTH = 40;      // 15% Zoom Out (Wide Angle)
-const TRAVEL_DISTANCE = 25;   // Full Screen Sweep (Wanderer Mode)
-
-// SPEED CONFIG (Gradual Ramp)
-const SPEED_BASE = 0.0005;      // Ultra Slow Start
-const SPEED_INCREMENT = 0.0002; // +0.0002 Speed
-const SPEED_INTERVAL = 4;       // Every 4 Blocks
+// --- GLOBALS ---
+let camera, scene, renderer;
+let world;
+let lastTime;
+let stack;
+let overhangs;
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
 let startTime = 0;
 
-// --- STATE ---
-let scene, camera, renderer, world;
-let stack = [];
-let overhangs = [];
-let particles = [];
-let gameEnded = false;
-let hue = 230; // Deep Purple Start
-let combo = 0;
+// --- CONFIGURATION ---
+const boxHeight = 1.5; 
+const originalBoxSize = 6.5; 
 
-const scoreEl = document.getElementById("score");
-const instructionsEl = document.getElementById("instructions");
+// SPEED CONFIGURATION
+const BASE_SPEED = 0.0005;      
+const SPEED_INCREMENT = 0.0002; 
+const SPEED_INTERVAL = 4;       
+
+// VISUALS
+const CAMERA_WIDTH = 40;       
+const TRAVEL_DISTANCE = 25;    
+
+// --- STATE ---
+let autoplay = false;
+let gameEnded;
+let isPlaying = false;
+let animationId = null;
+
+// COLOR STATE (The Palette System)
+let hue = 230;          // Start Hue
+let paletteCount = 0;   // Tracks 0-4 block cycle
+let isDarkening = true; // Toggles Light->Dark vs Dark->Light
+let targetBgColor = new THREE.Color(); // For smooth blending
+
+const scoreElement = document.getElementById("score");
+const instructionsElement = document.getElementById("instructions");
 
 init();
 
 function init() {
-    // 1. Physics
-    world = new CANNON.World();
-    world.gravity.set(0, -30, 0); // Heavy gravity
-    world.broadphase = new CANNON.NaiveBroadphase();
-    world.solver.iterations = 40;
+  autoplay = false;
+  gameEnded = false;
+  isPlaying = false;
+  lastTime = 0;
+  stack = [];
+  overhangs = [];
+  
+  // Reset Color State
+  hue = 230;
+  paletteCount = 0;
+  isDarkening = true;
 
-    // 2. Scene
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xd8b5cf); // Premium Mauve
+  clickOffsets = [];
+  startTime = 0;
 
-    // 3. Camera (Sentinel Wide Setup)
-    const aspect = window.innerWidth / window.innerHeight;
-    const height = CAMERA_WIDTH / aspect;
-    
-    camera = new THREE.OrthographicCamera(
-        CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, 
-        height / 2, height / -2, 
-        0, 100
-    );
-    camera.position.set(4, 4, 4);
-    camera.lookAt(0, 0, 0);
+  // 1. PHYSICS
+  world = new CANNON.World();
+  world.gravity.set(0, -30, 0); 
+  world.broadphase = new CANNON.NaiveBroadphase();
+  world.solver.iterations = 40;
 
-    // 4. Renderer
-    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    document.body.appendChild(renderer.domElement);
+  // 2. CAMERA
+  const aspect = window.innerWidth / window.innerHeight;
+  const height = CAMERA_WIDTH / aspect;
 
-    // 5. Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
+  camera = new THREE.OrthographicCamera(
+    CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 100
+  );
+  
+  camera.position.set(4, 4, 4);
+  camera.lookAt(0, 0, 0);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(20, 50, 20);
-    dirLight.castShadow = true;
-    
-    // FIX: INVISIBLE EDGE (Massive Shadow Box)
-    const d = 150; 
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
-    scene.add(dirLight);
+  // 3. SCENE
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color();
+  setTargetBackground(); // Initialize BG color
+  scene.background.copy(targetBgColor);
 
-    resetGame();
-    animate();
-}
+  addLayer(0, 0, originalBoxSize, originalBoxSize);
+  addLayer(-20, 0, originalBoxSize, originalBoxSize, "x");
 
-function resetGame() {
-    // Cleanup
-    stack.forEach(i => { scene.remove(i.mesh); world.remove(i.body); });
-    overhangs.forEach(i => { scene.remove(i.mesh); world.remove(i.body); });
-    particles.forEach(p => scene.remove(p.mesh));
-    
-    stack = [];
-    overhangs = [];
-    particles = [];
-    
-    gameEnded = false;
-    hue = 230;
-    combo = 0;
-    
-    if(scoreEl) scoreEl.innerText = "0";
-    if(instructionsEl) instructionsEl.style.display = "none";
-    
-    // Sentinel Reset
-    clickOffsets = [];
-    startTime = Date.now();
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+  scene.add(ambientLight);
 
-    // Base Blocks
-    addLayer(0, 0, ORIGINAL_SIZE, ORIGINAL_SIZE);
-    addLayer(-20, 0, ORIGINAL_SIZE, ORIGINAL_SIZE, "x"); // Start far off-screen
+  // LIGHTING FIX (Invisible Edge)
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  dirLight.position.set(50, 100, 50); 
+  dirLight.castShadow = true;
+  
+  const d = 150; 
+  dirLight.shadow.camera.left = -d;
+  dirLight.shadow.camera.right = d;
+  dirLight.shadow.camera.top = d;
+  dirLight.shadow.camera.bottom = -d;
+  
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
+  scene.add(dirLight);
 
-    camera.position.y = 4;
-    camera.lookAt(0, 0, 0);
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setAnimationLoop(animation);
+  document.body.appendChild(renderer.domElement);
 }
 
 function startGame() {
-    if(gameEnded) resetGame();
-}
+  if (animationId) cancelAnimationFrame(animationId);
+  isPlaying = true;
+  gameEnded = false;
+  lastTime = 0;
+  stack = [];
+  overhangs = [];
+  
+  // Reset Colors
+  hue = 230;
+  paletteCount = 0;
+  isDarkening = true;
+  setTargetBackground();
+  
+  clickOffsets = [];
+  startTime = Date.now();
 
-function addLayer(x, z, width, depth, direction) {
-    const y = stack.length * BOX_HEIGHT;
-    const color = new THREE.Color(`hsl(${hue}, 60%, 65%)`);
+  if (instructionsElement) instructionsElement.style.display = "none";
+  if (scoreElement) scoreElement.innerText = 0;
+
+  if (world) {
+    while (world.bodies.length > 0) {
+      world.remove(world.bodies[0]);
+    }
+  }
+
+  if (scene) {
+    while (scene.children.find((c) => c.type == "Mesh")) {
+      const mesh = scene.children.find((c) => c.type == "Mesh");
+      scene.remove(mesh);
+    }
     
-    const geometry = new THREE.BoxGeometry(width, BOX_HEIGHT, depth);
-    const material = new THREE.MeshLambertMaterial({ color });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
+    scene.background.copy(targetBgColor);
+    addLayer(0, 0, originalBoxSize, originalBoxSize);
+    addLayer(-20, 0, originalBoxSize, originalBoxSize, "x");
+  }
 
-    // Static Body for Stack
-    const shape = new CANNON.Box(new CANNON.Vec3(width/2, BOX_HEIGHT/2, depth/2));
-    const body = new CANNON.Body({ mass: 0, shape });
-    body.position.set(x, y, z);
-    world.addBody(body);
-
-    stack.push({ mesh, body, width, depth, direction });
-}
-
-function addOverhang(x, z, width, depth, color) {
-    const y = (stack.length - 1) * BOX_HEIGHT;
-    const geometry = new THREE.BoxGeometry(width, BOX_HEIGHT, depth);
-    const material = new THREE.MeshLambertMaterial({ color });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-
-    // Dynamic Body for Debris
-    const shape = new CANNON.Box(new CANNON.Vec3(width/2, BOX_HEIGHT/2, depth/2));
-    // Mass 5 = Heavy Drop (Dead Weight)
-    const body = new CANNON.Body({ mass: 5, shape });
-    body.position.set(x, y, z);
-    
-    // Low Spin (0.1)
-    const rand = () => (Math.random() - 0.5) * 0.1;
-    body.angularVelocity.set(rand(), rand(), rand()); 
-
-    world.addBody(body);
-    overhangs.push({ mesh, body });
-}
-
-function spawnParticles(x, y, z, color) {
-    for (let i = 0; i < 10; i++) {
-        const size = 0.1 + Math.random() * 0.2;
-        const geometry = new THREE.BoxGeometry(size, size, size);
-        const material = new THREE.MeshBasicMaterial({ color });
-        const mesh = new THREE.Mesh(geometry, material);
-        
-        mesh.position.set(x + (Math.random() - 0.5), y, z + (Math.random() - 0.5));
-        
-        const velX = (Math.random() - 0.5) * 5;
-        const velY = (Math.random() - 0.5) * 5;
-        const velZ = (Math.random() - 0.5) * 5;
-
-        scene.add(mesh);
-        particles.push({ mesh, velX, velY, velZ, life: 1.0 });
-    }
-}
-
-function cutBox() {
-    const top = stack[stack.length - 1];
-    const prev = stack[stack.length - 2];
-    const dir = top.direction;
-
-    const delta = top.mesh.position[dir] - prev.mesh.position[dir];
-    const size = dir === "x" ? top.width : top.depth;
-    const diff = Math.abs(delta);
-    const overlap = size - diff;
-
-    if (overlap > 0) {
-        const newW = dir === "x" ? overlap : top.width;
-        const newD = dir === "z" ? overlap : top.depth;
-        
-        // Update Top
-        top.width = newW;
-        top.depth = newD;
-        top.mesh.scale[dir] = overlap / size;
-        top.mesh.position[dir] -= delta / 2;
-        top.body.position[dir] -= delta / 2;
-
-        // Spawn Debris
-        const shift = (overlap/2 + diff/2) * Math.sign(delta);
-        const ox = dir === "x" ? top.mesh.position.x + shift : top.mesh.position.x;
-        const oz = dir === "z" ? top.mesh.position.z + shift : top.mesh.position.z;
-        const ow = dir === "x" ? diff : newW;
-        const od = dir === "z" ? diff : newD;
-        
-        if(ow > 0.05 && od > 0.05) { 
-            addOverhang(ox, oz, ow, od, top.mesh.material.color);
-        }
-
-        // Sentinel Biometrics
-        clickOffsets.push(delta);
-
-        // Particles (Visual Flair)
-        if (diff < 0.5) {
-            spawnParticles(top.mesh.position.x, top.mesh.position.y, top.mesh.position.z, top.mesh.material.color);
-        }
-
-        // Next Layer
-        hue += 5;
-        if(scoreEl) scoreEl.innerText = stack.length - 1;
-
-        const nextDir = dir === "x" ? "z" : "x";
-        
-        // Spawn far off-screen based on Travel Distance
-        const spawnDist = TRAVEL_DISTANCE * 1.1;
-        const nx = nextDir === "x" ? -spawnDist : top.mesh.position.x;
-        const nz = nextDir === "z" ? -spawnDist : top.mesh.position.z;
-
-        addLayer(nx, nz, newW, newD, nextDir);
-    } else {
-        gameOver();
-    }
-}
-
-function gameOver() {
-    gameEnded = true;
-    const top = stack[stack.length - 1];
-    addOverhang(top.mesh.position.x, top.mesh.position.z, top.width, top.depth, top.mesh.material.color);
-    scene.remove(top.mesh);
-    world.remove(top.body);
-    stack.pop();
-
-    const score = stack.length - 1;
-    const duration = Date.now() - startTime;
-    
-    // Show Instructions again
-    if(instructionsEl) instructionsEl.style.display = "flex";
-
-    // Send Data
-    if(score > 0) {
-        window.parent.postMessage({ 
-            type: "GAME_OVER", 
-            score: score,
-            biometrics: { duration, clickOffsets }
-        }, "*");
-    }
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-
-    if (!gameEnded && stack.length > 1) {
-        const top = stack[stack.length - 1];
-        
-        // DYNAMIC SPEED LOGIC
-        const level = stack.length;
-        let currentSpeed = SPEED_BASE + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
-        
-        // MOVEMENT LOGIC
-        const time = Date.now();
-        // Use specific time scale for smooth sin wave
-        const pos = Math.sin(time * currentSpeed) * TRAVEL_DISTANCE;
-        
-        if (top.direction === "x") {
-            top.mesh.position.x = pos;
-            top.body.position.x = pos;
-        } else {
-            top.mesh.position.z = pos;
-            top.body.position.z = pos;
-        }
-    }
-
-    // Particles
-    for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.life -= 0.03;
-        p.mesh.position.x += p.velX * 0.05;
-        p.mesh.position.y += p.velY * 0.05;
-        p.mesh.position.z += p.velZ * 0.05;
-        p.mesh.scale.setScalar(p.life);
-        if (p.life <= 0) {
-            scene.remove(p.mesh);
-            particles.splice(i, 1);
-        }
-    }
-
-    // Camera Follow
-    if(!gameEnded) {
-        let targetY = stack.length * BOX_HEIGHT + 4;
-        camera.position.y += (targetY - camera.position.y) * 0.05;
-    }
-
-    world.step(1/60);
-    overhangs.forEach(o => {
-        o.mesh.position.copy(o.body.position);
-        o.mesh.quaternion.copy(o.body.quaternion);
-    });
-
-    renderer.render(scene, camera);
-}
-
-// --- CONTROLS ---
-window.addEventListener("mousedown", (e) => {
-    if(!gameEnded) cutBox();
-});
-
-window.addEventListener("keydown", (e) => {
-    if(e.code === "Space") {
-        e.preventDefault();
-        if(!gameEnded) cutBox();
-        else startGame();
-    }
-});
-
-window.addEventListener("resize", () => {
+  if (camera) {
     const aspect = window.innerWidth / window.innerHeight;
     const height = CAMERA_WIDTH / aspect;
     camera.left = CAMERA_WIDTH / -2;
     camera.right = CAMERA_WIDTH / 2;
     camera.top = height / 2;
     camera.bottom = height / -2;
+    camera.position.set(4, 4, 4);
+    camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+}
+
+// --- COLOR LOGIC ---
+function getCurrentBlockColor() {
+    // Logic: 4 steps of Lightness
+    // If darkening: 75 -> 70 -> 65 -> 60
+    // If lightening: 60 -> 65 -> 70 -> 75
+    let lightness;
+    if (isDarkening) {
+        lightness = 75 - (paletteCount * 5);
+    } else {
+        lightness = 60 + (paletteCount * 5);
+    }
+    return new THREE.Color(`hsl(${hue}, 70%, ${lightness}%)`);
+}
+
+function setTargetBackground() {
+    // Background is a pastel version of the current hue
+    // High lightness (85%), Low saturation (30%) for "blending" feel
+    targetBgColor.setHSL(hue / 360, 0.3, 0.85);
+}
+
+function cycleColor() {
+    paletteCount++;
+    
+    // Every 4 blocks, shift hue and reverse gradient
+    if (paletteCount >= 4) {
+        paletteCount = 0;
+        hue += 30; // Shift to next color theme
+        isDarkening = !isDarkening; // Reverse light/dark direction
+        setTargetBackground(); // Update background target
+    }
+}
+
+function addLayer(x, z, width, depth, direction) {
+  const y = boxHeight * stack.length;
+  const layer = generateBox(x, y, z, width, depth, false);
+  layer.direction = direction;
+  stack.push(layer);
+}
+
+function addOverhang(x, z, width, depth) {
+  const y = boxHeight * (stack.length - 1);
+  const overhang = generateBox(x, y, z, width, depth, true);
+  overhangs.push(overhang);
+}
+
+function generateBox(x, y, z, width, depth, falls) {
+  const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
+  
+  // GET THEME COLOR
+  const color = getCurrentBlockColor();
+  
+  const material = new THREE.MeshLambertMaterial({ color });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
+  
+  // Mass 5 (Dead weight)
+  let mass = falls ? 5 : 0;
+  mass *= width / originalBoxSize;
+  mass *= depth / originalBoxSize;
+
+  const body = new CANNON.Body({ mass, shape });
+  body.position.set(x, y, z);
+  
+  if (falls) {
+      const spin = Math.random() * 0.1;
+      body.angularVelocity.set(spin, 0, spin);
+  }
+
+  world.addBody(body);
+  return { threejs: mesh, cannonjs: body, width, depth };
+}
+
+function cutBox(topLayer, overlap, size, delta) {
+  const direction = topLayer.direction;
+  const newWidth = direction == "x" ? overlap : topLayer.width;
+  const newDepth = direction == "z" ? overlap : topLayer.depth;
+
+  topLayer.width = newWidth;
+  topLayer.depth = newDepth;
+  topLayer.threejs.scale[direction] = overlap / size;
+  topLayer.threejs.position[direction] -= delta / 2;
+  topLayer.cannonjs.position[direction] -= delta / 2;
+
+  const overhangShift = (overlap / 2 + (size - overlap) / 2) * Math.sign(delta);
+  const overhangX = direction == "x" ? topLayer.threejs.position.x + overhangShift : topLayer.threejs.position.x;
+  const overhangZ = direction == "z" ? topLayer.threejs.position.z + overhangShift : topLayer.threejs.position.z;
+  const overhangWidth = direction == "x" ? size - overlap : topLayer.width;
+  const overhangDepth = direction == "z" ? size - overlap : topLayer.depth;
+
+  addOverhang(overhangX, overhangZ, overhangWidth, overhangDepth);
+}
+
+function animation() {
+  if (lastTime) {
+    const timePassed = performance.now() - lastTime;
+    const topLayer = stack[stack.length - 1];
+    const boxShouldMove = !gameEnded && !autoplay;
+
+    if (boxShouldMove) {
+      const level = stack.length; 
+      let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
+      
+      const movePos = Math.sin(Date.now() * currentSpeed) * TRAVEL_DISTANCE;
+      
+      if (topLayer.direction === 'x') {
+        topLayer.threejs.position.x = movePos;
+        topLayer.cannonjs.position.x = movePos;
+      } else {
+        topLayer.threejs.position.z = movePos;
+        topLayer.cannonjs.position.z = movePos;
+      }
+    }
+
+    // BACKGROUND BLENDING
+    // Smoothly transition the current background to the target hue
+    if (scene.background) {
+        scene.background.lerp(targetBgColor, 0.02);
+    }
+
+    const targetY = boxHeight * (stack.length - 2) + 4;
+    camera.position.y += (targetY - camera.position.y) * 0.1;
+
+    updatePhysics(timePassed);
+    renderer.render(scene, camera);
+  }
+  lastTime = performance.now();
+}
+
+function updatePhysics(timePassed) {
+  world.step(timePassed / 1000);
+  overhangs.forEach((element) => {
+    element.threejs.position.copy(element.cannonjs.position);
+    element.threejs.quaternion.copy(element.cannonjs.quaternion);
+  });
+}
+
+function missedTheSpot() {
+  const topLayer = stack[stack.length - 1];
+  addOverhang(topLayer.threejs.position.x, topLayer.threejs.position.z, topLayer.width, topLayer.depth);
+  world.remove(topLayer.cannonjs);
+  scene.remove(topLayer.threejs);
+
+  gameEnded = true;
+  isPlaying = false;
+  if (instructionsElement) instructionsElement.style.display = "flex";
+  
+  const finalScore = stack.length - 1; 
+  const duration = Date.now() - startTime;
+  
+  if (finalScore > 0) {
+      const payload = { 
+          type: "GAME_OVER", 
+          score: finalScore,
+          biometrics: { duration, clickOffsets }
+      };
+      window.parent.postMessage(payload, "*");
+  }
+}
+
+function splitBlockAndAddNextOneIfOverlaps() {
+  if (gameEnded) return;
+  const topLayer = stack[stack.length - 1];
+  const previousLayer = stack[stack.length - 2];
+  const direction = topLayer.direction;
+  const size = direction == "x" ? topLayer.width : topLayer.depth;
+  const delta = topLayer.threejs.position[direction] - previousLayer.threejs.position[direction];
+  const overhangSize = Math.abs(delta);
+  const overlap = size - overhangSize;
+
+  if (overlap > 0) {
+    cutBox(topLayer, overlap, size, delta);
+    clickOffsets.push(delta);
+    
+    // UPDATE COLOR CYCLE
+    cycleColor();
+    
+    const nextX = direction == "x" ? topLayer.threejs.position.x : -20;
+    const nextZ = direction == "z" ? topLayer.threejs.position.z : -20;
+    const newWidth = topLayer.width;
+    const newDepth = topLayer.depth;
+    const nextDirection = direction == "x" ? "z" : "x";
+    
+    if (scoreElement) scoreElement.innerText = stack.length - 1;
+    addLayer(nextX, nextZ, newWidth, newDepth, nextDirection);
+  } else {
+    missedTheSpot();
+  }
+}
+
+window.addEventListener("mousedown", (e) => {
+    if (isPlaying) {
+        e.preventDefault();
+        splitBlockAndAddNextOneIfOverlaps();
+    }
+});
+window.addEventListener("keydown", (event) => {
+  if (event.code === "Space" || event.key === " ") {
+    event.preventDefault();
+    if (isPlaying) splitBlockAndAddNextOneIfOverlaps();
+    else if (!gameEnded && document.getElementById("instructions").style.display !== "none") startGame();
+  }
+});
+window.addEventListener("resize", () => {
+  const aspect = window.innerWidth / window.innerHeight;
+  const height = CAMERA_WIDTH / aspect;
+  camera.left = CAMERA_WIDTH / -2;
+  camera.right = CAMERA_WIDTH / 2;
+  camera.top = height / 2;
+  camera.bottom = height / -2;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
