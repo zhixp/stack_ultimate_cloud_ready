@@ -16,18 +16,16 @@ let startTime = 0;
 
 // --- CONFIGURATION ---
 const boxHeight = 1;
-// CHANGE 1: LARGER SLABS (Was 4 -> Now 5)
-const originalBoxSize = 5; 
+const originalBoxSize = 5; // Large Slabs
 
-// CHANGE 2: GRADUAL SPEED RAMP
-// Start at 0.005 (Easy/Med). Increase by 0.001 every 4 blocks.
-const BASE_SPEED = 0.005; 
-const SPEED_INCREMENT = 0.001; 
-const SPEED_INTERVAL = 4;
+// CHANGE 1: ULTRA SLOW START (User Request)
+const BASE_SPEED = 0.0005;      // Start almost static
+const SPEED_INCREMENT = 0.0002; // Very gentle increase
+const SPEED_INTERVAL = 4;       // Every 4 blocks
 
 // VISUALS
 const CAMERA_WIDTH = 32;       
-const TRAVEL_DISTANCE = 9; // Increased slightly to match larger blocks
+const TRAVEL_DISTANCE = 8; // Slightly reduced to prevent edge clipping
 
 // --- STATE ---
 let autoplay = false;
@@ -84,9 +82,8 @@ function init() {
   dirLight.position.set(10, 20, 0);
   dirLight.castShadow = true;
   
-  // CHANGE 3: SHADOW BOX EXPANSION (Fixes Invisible Corner)
-  // We expand the area the light "sees" so blocks don't clip out of existence
-  const d = 40; // Increased coverage
+  // CHANGE 2: EXPANDED SHADOW BOX (Fixes Invisible Corner)
+  const d = 60; // Massive coverage to prevent clipping at edges
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
@@ -172,15 +169,20 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  let mass = falls ? 50 : 0;
+  // CHANGE 3: MASS REDUCTION (80% LOWER)
+  // Was 50 -> Now 10. Less explosive force.
+  let mass = falls ? 10 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
+  // CHANGE 4: SPIN DAMPENING
+  // Reduced random spin from 5.0 to 0.1. 
+  // This stops the block from flying away; it just drops.
   if (falls) {
-      const spin = Math.random() * 5;
+      const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
   }
 
@@ -215,9 +217,8 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- GRADUAL SPEED LOGIC ---
+      // --- RAMPED SPEED CALCULATION ---
       const level = stack.length; 
-      // Increase speed every 4 blocks
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
       const movePos = Math.sin(Date.now() * currentSpeed) * TRAVEL_DISTANCE;
