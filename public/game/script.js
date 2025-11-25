@@ -15,18 +15,19 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-// CHANGE: Taller blocks (1.5) match the "Premium" reference photo better
-const boxHeight = 1.5; 
-const originalBoxSize = 5; 
+const boxHeight = 1.5; // Kept the "Chunky" height
+// CHANGE 4: 30% LARGER BLOCKS (Was 5 -> Now 6.5)
+const originalBoxSize = 6.5; 
 
-// SPEED CONFIGURATION
-const BASE_SPEED = 0.005;      
-const SPEED_INCREMENT = 0.002; // CHANGE: Faster Ramp (was 0.001)
-const SPEED_INTERVAL = 4;      
+// CHANGE 2: ULTRA SLOW SPEED CONFIG
+const BASE_SPEED = 0.0005;      // Extremely slow start
+const SPEED_INCREMENT = 0.0002; // +0.0002 every 4 blocks
+const SPEED_INTERVAL = 4;       
 
 // VISUALS
 const CAMERA_WIDTH = 32;       
-const TRAVEL_DISTANCE = 10;    // CHANGE: Wider Swing (was 8)
+// CHANGE 2: REDUCED TRAVEL (Was 10 -> Now 8)
+const TRAVEL_DISTANCE = 8;    
 
 // --- STATE ---
 let autoplay = false;
@@ -47,7 +48,7 @@ function init() {
   lastTime = 0;
   stack = [];
   overhangs = [];
-  hue = 230; // Start at Deep Blue/Purple
+  hue = 230; 
 
   clickOffsets = [];
   startTime = 0;
@@ -71,8 +72,7 @@ function init() {
 
   // 3. SCENE
   scene = new THREE.Scene();
-  // CHANGE: Premium Soft Pink/Mauve Background (Static)
-  scene.background = new THREE.Color(0xd8b5cf);
+  scene.background = new THREE.Color(0xd8b5cf); // Premium Pink
 
   addLayer(0, 0, originalBoxSize, originalBoxSize);
   addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
@@ -84,8 +84,8 @@ function init() {
   dirLight.position.set(10, 20, 0);
   dirLight.castShadow = true;
   
-  // CHANGE: EXPANDED SHADOW BOX (Fixes Invisible Corner)
-  const d = 60; // Increased to 60 as requested
+  // CHANGE 3: INVISIBLE EDGE FIX
+  const d = 60; // Wide coverage prevents clipping
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
@@ -108,7 +108,7 @@ function startGame() {
   lastTime = 0;
   stack = [];
   overhangs = [];
-  hue = 230; // Reset to Blue/Purple
+  hue = 230;
   
   clickOffsets = [];
   startTime = Date.now();
@@ -128,7 +128,6 @@ function startGame() {
       scene.remove(mesh);
     }
     
-    // Maintain Static Background
     scene.background = new THREE.Color(0xd8b5cf);
     addLayer(0, 0, originalBoxSize, originalBoxSize);
     addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
@@ -162,7 +161,6 @@ function addOverhang(x, z, width, depth) {
 
 function generateBox(x, y, z, width, depth, falls) {
   const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
-  // CHANGE: Hue cycling for Blue -> Pink gradient
   const color = new THREE.Color(`hsl(${hue}, 70%, 60%)`);
   const material = new THREE.MeshLambertMaterial({ color });
   const mesh = new THREE.Mesh(geometry, material);
@@ -173,15 +171,17 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 10 (80% reduced from 50)
-  let mass = falls ? 10 : 0;
+  // CHANGE 1: MASS REDUCTION (Dead Weight)
+  // Reduced from 50 to 5.
+  let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
-  // Low spin
+  // CHANGE 1: SPIN DAMPENING
+  // Reduced from 5 to 0.1
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -218,9 +218,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- RAMPED SPEED CALCULATION ---
       const level = stack.length; 
-      // Increase every 4 blocks by 0.002
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
       const movePos = Math.sin(Date.now() * currentSpeed) * TRAVEL_DISTANCE;
@@ -286,10 +284,8 @@ function splitBlockAndAddNextOneIfOverlaps() {
 
   if (overlap > 0) {
     cutBox(topLayer, overlap, size, delta);
-    
     clickOffsets.push(delta);
-
-    hue += 5; // Cycle colors faster for nice gradient
+    hue += 5; 
     
     const nextX = direction == "x" ? topLayer.threejs.position.x : -15;
     const nextZ = direction == "z" ? topLayer.threejs.position.z : -15;
