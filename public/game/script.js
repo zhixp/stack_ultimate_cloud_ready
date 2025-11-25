@@ -17,7 +17,7 @@ let startTime = 0;
 
 // --- CONFIGURATION ---
 // CHANGE 1: 33% LARGER (Titan Scale)
-const boxHeight = 45;          
+const boxHeight = 30;          
 const originalBoxSize = 150;   
 
 // SPEED CONFIG
@@ -28,7 +28,7 @@ const SPEED_INTERVAL = 4;
 // VISUALS
 // CHANGE: SCALED UP TO FIT NEW BLOCKS
 const ZOOM_SCALE = 300;       
-const TRAVEL_DISTANCE = 150;    // 33% Wider Travel
+const TRAVEL_DISTANCE = 30;    // 33% Wider Travel
 const CAMERA_OFFSET_Y = 300;   // Higher Camera
 
 // --- STATE ---
@@ -57,7 +57,7 @@ function init() {
 
   // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(50, 100, 50); 
+  world.gravity.set(0, 50, 0); 
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
