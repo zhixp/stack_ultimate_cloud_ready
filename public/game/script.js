@@ -16,16 +16,18 @@ let startTime = 0;
 
 // --- CONFIGURATION ---
 const boxHeight = 1;
-const originalBoxSize = 4;
+// CHANGE 1: LARGER SLABS (Was 4 -> Now 5)
+const originalBoxSize = 5; 
 
-// SPEED CONFIGURATION (Ramped)
-const INITIAL_SPEED = 0.001;   // Starts very slow (Speed 1)
-const SPEED_STEP = 0.001;      // +1 Speed unit
-const SPEED_INTERVAL = 4;      // Every 4 blocks
+// CHANGE 2: GRADUAL SPEED RAMP
+// Start at 0.005 (Easy/Med). Increase by 0.001 every 4 blocks.
+const BASE_SPEED = 0.005; 
+const SPEED_INCREMENT = 0.001; 
+const SPEED_INTERVAL = 4;
 
 // VISUALS
-const CAMERA_WIDTH = 32;       // FIX: 25% Zoom Out
-const TRAVEL_DISTANCE = 8.5;   // FIX: 30% More Travel
+const CAMERA_WIDTH = 32;       
+const TRAVEL_DISTANCE = 9; // Increased slightly to match larger blocks
 
 // --- STATE ---
 let autoplay = false;
@@ -81,6 +83,15 @@ function init() {
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
   dirLight.position.set(10, 20, 0);
   dirLight.castShadow = true;
+  
+  // CHANGE 3: SHADOW BOX EXPANSION (Fixes Invisible Corner)
+  // We expand the area the light "sees" so blocks don't clip out of existence
+  const d = 40; // Increased coverage
+  dirLight.shadow.camera.left = -d;
+  dirLight.shadow.camera.right = d;
+  dirLight.shadow.camera.top = d;
+  dirLight.shadow.camera.bottom = -d;
+  
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   scene.add(dirLight);
@@ -204,11 +215,10 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- SPEED CALCULATION ---
+      // --- GRADUAL SPEED LOGIC ---
       const level = stack.length; 
-      // Speed = Initial + (Level / 4) * Step
-      // Math.floor(level/4) means it increases every 4 blocks
-      let currentSpeed = INITIAL_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_STEP);
+      // Increase speed every 4 blocks
+      let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
       const movePos = Math.sin(Date.now() * currentSpeed) * TRAVEL_DISTANCE;
       
