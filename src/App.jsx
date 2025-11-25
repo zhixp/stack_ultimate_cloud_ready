@@ -10,6 +10,7 @@ import { CONTRACT_ADDRESS, CONTRACT_ABI } from './abi';
 
 const BACKEND_API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api/submit-score";
 const ENTRY_FEE = "0.00001";
+const GAS_BUFFER = 0.00005;
 
 const abstractChain = {
   id: 11124, name: 'Abstract Testnet', network: 'abstract-testnet',
@@ -18,7 +19,7 @@ const abstractChain = {
 };
 
 function App() {
-  const { login, authenticated, user, logout, signMessage } = usePrivy();
+  const { login, authenticated, user, logout } = usePrivy();
   const { wallets } = useWallets();
   
   // State
@@ -44,46 +45,54 @@ function App() {
 
   const showInfo = (title, content, type = "info") => setInfoModal({ open: true, title, content, type });
 
-  // --- 1. DETERMINISTIC WALLET RESTORATION ---
-  // Instead of random keys, we try to load from storage. 
-  // If missing, we prompt user to "Restore/Create" via signature.
+  // --- 1. SAFE INITIALIZATION ---
   useEffect(() => {
     const storedKey = localStorage.getItem("stack_burner_key");
-    if (storedKey) {
+    if (storedKey && storedKey.startsWith("0x") && storedKey.length === 66) {
         try {
             const account = privateKeyToAccount(storedKey);
             setBurnerAddress(account.address);
         } catch (e) {
-            console.error("Invalid stored key");
             localStorage.removeItem("stack_burner_key");
         }
     }
   }, []);
 
-  // --- ACTION: GENERATE WALLET FROM SIGNATURE ---
+  // --- 2. BULLETPROOF RESTORE (Direct to MetaMask) ---
   const handleRestoreWallet = async () => {
-      if (!authenticated) {
-          showInfo("Login Required", "Please login with your main wallet first.", "error");
+      if (!authenticated || wallets.length === 0) {
+          showInfo("Connection Lost", "Please Logout and Login again to refresh MetaMask.", "error");
           return;
       }
+
       try {
           setIsWriting(true);
-          // 1. Request Signature (Deterministic Seed)
-          const signature = await signMessage("Generate My Stack Ultimate Wallet Key\n\n(Signing this will restore your game balance)");
+          const wallet = wallets[0]; // Get the Connected Wallet
           
-          // 2. Hash Signature to create Private Key
+          // Force switch to Abstract Chain first
+          await wallet.switchChain(11124);
+          
+          // Use VIEM to talk directly to the provider (Bypasses Privy hooks)
+          const provider = await wallet.getEthereumProvider();
+          const client = createWalletClient({ account: wallet.address, chain: abstractChain, transport: custom(provider) });
+          
+          const signature = await client.signMessage({ 
+              account: wallet.address,
+              message: "Generate My Stack Ultimate Wallet Key\n\n(Signing this will restore your game balance)" 
+          });
+          
+          // Hash signature to get Private Key
           const deterministicKey = keccak256(toBytes(signature));
           
-          // 3. Save & Set
           localStorage.setItem("stack_burner_key", deterministicKey);
           const account = privateKeyToAccount(deterministicKey);
           setBurnerAddress(account.address);
           
-          showInfo("Success", "Game Wallet Restored!", "success");
+          showInfo("Success", "Wallet Restored! Your balance is safe.", "success");
           fetchGameState();
       } catch (e) {
           console.error(e);
-          showInfo("Cancelled", "Wallet generation cancelled.", "error");
+          showInfo("Error", "Could not sign message. Try refreshing.", "error");
       } finally {
           setIsWriting(false);
       }
@@ -115,9 +124,8 @@ function App() {
     return () => clearInterval(interval);
   }, [user, burnerAddress]);
 
-  // --- DEPOSIT ---
   const handleTopUp = async () => {
-      if (!burnerAddress) { showInfo("No Wallet", "Please Restore/Create Game Wallet first.", "error"); return; }
+      if (!burnerAddress) { showInfo("No Wallet", "Please Initialize Wallet first.", "error"); return; }
       if (!depositAmount || parseFloat(depositAmount) <= 0) { showInfo("Error", "Invalid amount.", "error"); return; }
 
       try {
@@ -136,7 +144,6 @@ function App() {
       } finally { setIsWriting(false); }
   };
 
-  // --- WITHDRAW ---
   const handleWithdraw = async () => {
       if (!burnerAddress) return;
       if (parseFloat(burnerBalance) <= 0) { showInfo("Error", "Wallet is empty.", "error"); return; }
@@ -149,10 +156,10 @@ function App() {
           const publicClient = createPublicClient({ chain: abstractChain, transport: http() });
 
           const balance = await publicClient.getBalance({ address: burnerAddress });
-          const buffer = parseEther("0.0002"); 
+          const buffer = parseEther("0.00005"); // Minimal buffer
           const valueToSend = balance - buffer;
 
-          if (valueToSend <= 0n) { showInfo("Balance Low", "Need > 0.0002 ETH for gas.", "error"); return; }
+          if (valueToSend <= 0n) { showInfo("Balance Low", `Need > 0.00005 ETH for gas.`, "error"); return; }
 
           const userAddress = user?.wallet?.address;
           await client.sendTransaction({ to: userAddress, value: valueToSend });
@@ -165,12 +172,13 @@ function App() {
       } finally { setIsWriting(false); }
   };
 
-  // --- START GAME ---
   const handleStartGame = async () => {
-      if (!burnerAddress) { showInfo("No Wallet", "Please Restore/Create Game Wallet.", "error"); return; }
-      const required = parseFloat(ENTRY_FEE) + 0.0002;
+      if (!burnerAddress) { showInfo("No Wallet", "Please Initialize Game Wallet.", "error"); return; }
+      
+      const required = parseFloat(ENTRY_FEE) + GAS_BUFFER;
+      
       if (parseFloat(burnerBalance) < required) {
-          showInfo("Low Balance", `Not enough funds. Need ${required} ETH.`, "error");
+          showInfo("Low Balance", `Need ${required} ETH (Ticket + Gas).`, "error");
           return;
       }
       try {
@@ -191,7 +199,6 @@ function App() {
       }
   };
 
-  // --- GAME OVER ---
   const handleGameOver = async (score, biometrics) => {
     setIsGameActive(false);
     if (score === 0 || !biometrics) return;
@@ -234,6 +241,7 @@ function App() {
   const copyPrivateKey = () => {
       const key = localStorage.getItem("stack_burner_key");
       if(key) { navigator.clipboard.writeText(key); alert("Key Copied!"); }
+      else { alert("No key found. Initialize wallet first."); }
   };
 
   return (
@@ -241,7 +249,6 @@ function App() {
       <Modal isOpen={infoModal.open} onClose={() => setInfoModal({...infoModal, open: false})} title={infoModal.title} type={infoModal.type}>{infoModal.content}</Modal>
       {showResult && <GameOverModal score={lastScore} isRecording={isRecordingScore} onClose={() => setShowResult(false)} onReplay={handleStartGame} />}
 
-      {/* WALLET MANAGER MODAL */}
       {showWalletMgr && (
         <div className="ui-modal-overlay" style={{
             position:'fixed', top:0, left:0, width:'100%', height:'100%', 
@@ -249,9 +256,11 @@ function App() {
         }}>
             <div style={{background:'#1a1a1a', padding:'30px', borderRadius:'15px', border:'1px solid #444', maxWidth:'400px', width:'90%'}}>
                 <h2 style={{color:'#fff', marginTop:0}}>WALLET SETTINGS</h2>
-                <div style={{background:'#000', padding:'10px', borderRadius:'5px', margin:'15px 0', overflowWrap:'break-word', fontFamily:'monospace', color:'#0f0'}}>
-                    {viewPrivateKey ? localStorage.getItem("stack_burner_key") : "•".repeat(64)}
+                
+                <div style={{background:'#000', padding:'10px', borderRadius:'5px', margin:'15px 0', overflowWrap:'break-word', fontFamily:'monospace', color:'#0f0', fontSize:'0.8rem'}}>
+                    {viewPrivateKey ? (localStorage.getItem("stack_burner_key") || "No Key Found") : "•".repeat(64)}
                 </div>
+                
                 <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
                     <button className="ui-btn-buy" onClick={() => setViewPrivateKey(!viewPrivateKey)} style={{fontSize:'0.8rem'}}>{viewPrivateKey ? "HIDE" : "REVEAL"}</button>
                     <button className="ui-btn-buy" onClick={copyPrivateKey} style={{fontSize:'0.8rem'}}>COPY KEY</button>
@@ -282,22 +291,23 @@ function App() {
                 </div>
                 
                 <div className="ui-shop-section" style={{marginTop: '20px', padding: '20px', border: '1px solid #444', borderRadius: '10px', background: 'rgba(0,0,0,0.3)'}}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
-                        <div style={{color: '#aaa', fontSize: '0.9rem', letterSpacing: '1px', textTransform: 'uppercase'}}>In-Game Wallet</div>
-                        <button onClick={() => setShowWalletMgr(true)} style={{background:'transparent', border:'1px solid #555', color:'#aaa', padding:'5px 10px', borderRadius:'5px', cursor:'pointer', fontSize:'0.8rem'}}>⚙️</button>
-                    </div>
                     
-                    {/* KEY MISSING? SHOW RESTORE BUTTON */}
                     {!burnerAddress ? (
+                        /* LOCKED STATE - MUST INITIALIZE */
                         <div style={{textAlign:'center', padding:'20px'}}>
-                            <div style={{color:'#ff4444', marginBottom:'15px'}}>⚠ No Game Wallet Found</div>
+                            <div style={{color:'#aaa', marginBottom:'15px'}}>Initialize game wallet to play</div>
                             <button className="ui-btn-play" onClick={handleRestoreWallet} disabled={isWriting} style={{fontSize:'1rem'}}>
-                                🔑 RESTORE WALLET
+                                🔑 INITIALIZE / RESTORE
                             </button>
-                            <p style={{color:'#666', fontSize:'0.8rem', marginTop:'10px'}}>Sign to restore your balance.</p>
+                            <p style={{color:'#666', fontSize:'0.7rem', marginTop:'10px'}}>Signs a secure key from your wallet.</p>
                         </div>
                     ) : (
+                        /* UNLOCKED STATE */
                         <>
+                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
+                                <div style={{color: '#aaa', fontSize: '0.9rem', letterSpacing: '1px', textTransform: 'uppercase'}}>In-Game Wallet</div>
+                                <button onClick={() => setShowWalletMgr(true)} style={{background:'transparent', border:'1px solid #555', color:'#aaa', padding:'5px 10px', borderRadius:'5px', cursor:'pointer', fontSize:'0.8rem'}}>⚙️</button>
+                            </div>
                             <div className="ui-value" style={{fontSize: '2rem', marginBottom: '20px', color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.1)'}}>{Number(burnerBalance).toFixed(5)} ETH</div>
                             <div style={{display: 'flex', gap: '10px', marginBottom: '15px'}}>
                                 <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} step="0.001" style={{background: '#222', border: '1px solid #555', color: 'white', padding: '10px', borderRadius: '5px', width: '100px', textAlign: 'center'}} />
@@ -305,7 +315,7 @@ function App() {
                             </div>
                             <button className="ui-btn-buy" onClick={handleWithdraw} disabled={isWriting} style={{width: '100%', background: '#333', border: '1px solid #555', fontSize: '0.9rem', marginBottom: '20px'}}>⬆ WITHDRAW ALL</button>
                             <div style={{height: '1px', background: '#333', marginBottom: '20px'}}></div>
-                            <button className="ui-btn-play" style={{width: '100%', padding: '15px', fontSize: '1.2rem'}} onClick={handleStartGame} disabled={isWriting || parseFloat(burnerBalance) < (parseFloat(ENTRY_FEE) + 0.0002)}>PLAY FOR POT ({ENTRY_FEE} ETH)</button>
+                            <button className="ui-btn-play" style={{width: '100%', padding: '15px', fontSize: '1.2rem'}} onClick={handleStartGame} disabled={isWriting || parseFloat(burnerBalance) < (parseFloat(ENTRY_FEE) + GAS_BUFFER)}>PLAY FOR POT ({ENTRY_FEE} ETH)</button>
                             <div className="ui-text-warning" style={{marginTop:'10px', fontSize: '0.8rem', opacity: 0.7}}>Session Secured. No Popups.</div>
                         </>
                     )}
