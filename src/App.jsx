@@ -8,7 +8,8 @@ import Modal from './components/Modal';
 import GameOverModal from './components/GameOverModal';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from './abi';
 
-const BACKEND_API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api/submit-score";
+const BACKEND_API_URL = "https://stack-backend-node.onrender.com/api/submit-score";
+
 const ENTRY_FEE = "0.00001";
 const GAS_BUFFER = 0.00005;
 
