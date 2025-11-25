@@ -18,16 +18,15 @@ let startTime = 0;
 const boxHeight = 1.5; 
 const originalBoxSize = 6.5; 
 
-// SPEED CONFIGURATION
+// SPEED CONFIG
 const BASE_SPEED = 0.0005;      
 const SPEED_INCREMENT = 0.0002; 
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-// CHANGE: Switched to "Scale Factor" (Michael's Logic)
-// 33 is the perfect Zoom Out (Michael used 20, we want 15-20% wider)
-const ZOOM_SCALE = 33;       
-const TRAVEL_DISTANCE = 25;    
+// CHANGE: Increased to 40 to prevent edge clipping on all aspect ratios
+const ZOOM = 40; 
+const TRAVEL_DISTANCE = 25; 
 
 // --- STATE ---
 let autoplay = false;
@@ -61,14 +60,11 @@ function init() {
 
   // 2. SCENE
   scene = new THREE.Scene();
-  // Background handled by CSS gradient
 
-  // 3. CAMERA (MICHAEL'S LOGIC RESTORED)
+  // 3. CAMERA
   const aspect = window.innerWidth / window.innerHeight;
-  const d = ZOOM_SCALE;
+  const d = ZOOM; 
   
-  // This calculates bounds based on Aspect Ratio.
-  // It fixes the "Invisible Line" / "Overlap" bug.
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
@@ -94,7 +90,8 @@ function init() {
   dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // SHADOW BOX (Massive)
+  // SHADOW TUNING (Fixes fading/artifacts)
+  dirLight.shadow.bias = -0.0005; // Removes shadow acne/lines
   const shadowD = 200; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
@@ -179,15 +176,13 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 5 (Dead Weight)
-  let mass = falls ? 5 : 0;
+  let mass = falls ? 0.5 : 0; // Dead Weight
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
-  // Low Spin
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -197,17 +192,31 @@ function generateBox(x, y, z, width, depth, falls) {
   return { threejs: mesh, cannonjs: body, width, depth };
 }
 
+// --- CORE CHANGE: DESTROY & REBUILD STRATEGY ---
 function cutBox(topLayer, overlap, size, delta) {
   const direction = topLayer.direction;
   const newWidth = direction == "x" ? overlap : topLayer.width;
   const newDepth = direction == "z" ? overlap : topLayer.depth;
 
-  topLayer.width = newWidth;
-  topLayer.depth = newDepth;
-  topLayer.threejs.scale[direction] = overlap / size;
-  topLayer.threejs.position[direction] -= delta / 2;
-  topLayer.cannonjs.position[direction] -= delta / 2;
+  // 1. Remove the OLD Visual Mesh & Physics Body
+  scene.remove(topLayer.threejs);
+  world.remove(topLayer.cannonjs);
 
+  // 2. Calculate New Position
+  const newX = direction == "x" ? topLayer.threejs.position.x - (delta / 2) : topLayer.threejs.position.x;
+  const newZ = direction == "z" ? topLayer.threejs.position.z - (delta / 2) : topLayer.threejs.position.z;
+  const newY = topLayer.threejs.position.y;
+
+  // 3. Create BRAND NEW Block with Exact Dimensions
+  // This prevents scaling artifacts and "Invisible Edge" bugs
+  const newLayer = generateBox(newX, newY, newZ, newWidth, newDepth, false);
+  newLayer.direction = direction;
+  
+  // 4. Replace the top stack item with the new, clean block
+  stack.pop();
+  stack.push(newLayer);
+
+  // 5. Spawn Debris
   const overhangShift = (overlap / 2 + (size - overlap) / 2) * Math.sign(delta);
   const overhangX = direction == "x" ? topLayer.threejs.position.x + overhangShift : topLayer.threejs.position.x;
   const overhangZ = direction == "z" ? topLayer.threejs.position.z + overhangShift : topLayer.threejs.position.z;
@@ -224,7 +233,6 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- RAMPED SPEED ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -297,8 +305,8 @@ function splitBlockAndAddNextOneIfOverlaps() {
     
     const nextX = direction == "x" ? topLayer.threejs.position.x : -30;
     const nextZ = direction == "z" ? topLayer.threejs.position.z : -30;
-    const newWidth = topLayer.width;
-    const newDepth = topLayer.depth;
+    const newWidth = topLayer.width; // Using the UPDATED geometry width
+    const newDepth = topLayer.depth; // Using the UPDATED geometry depth
     const nextDirection = direction == "x" ? "z" : "x";
     
     if (scoreElement) scoreElement.innerText = stack.length - 1;
@@ -323,8 +331,7 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const d = ZOOM_SCALE;
-  // THIS IS THE KEY FIX:
+  const d = ZOOM;
   camera.left = -d * aspect;
   camera.right = d * aspect;
   camera.top = d;
