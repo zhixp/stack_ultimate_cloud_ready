@@ -9,6 +9,7 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
+let dirLight;
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
@@ -16,17 +17,15 @@ let startTime = 0;
 
 // --- CONFIGURATION ---
 const boxHeight = 1.5; 
-// CHANGE 1: MASSIVE BLOCKS (Was 6.5 -> Now 8)
-const originalBoxSize = 8; 
+const originalBoxSize = 8; // MASSIVE BLOCKS
 
-// CHANGE 2: USER SPEED REQUEST
+// SPEED CONFIG (User Request)
 const BASE_SPEED = 0.005;      // Snappy Start
-const SPEED_INCREMENT = 0.001; // Aggressive Ramp (+0.001)
-const SPEED_INTERVAL = 4;      // Every 4 blocks
+const SPEED_INCREMENT = 0.001; // Aggressive Ramp
+const SPEED_INTERVAL = 4;      
 
 // VISUALS
-// Adjusted Camera to fit the larger blocks + travel
-const CAMERA_WIDTH = 45;       
+const ZOOM = 40; 
 const TRAVEL_DISTANCE = 25;    
 
 // --- STATE ---
@@ -63,9 +62,9 @@ function init() {
   scene = new THREE.Scene();
   // Background handled by CSS
 
-  // 3. CAMERA
+  // 3. CAMERA (FIXED POSITION)
   const aspect = window.innerWidth / window.innerHeight;
-  const d = CAMERA_WIDTH; 
+  const d = ZOOM; 
   
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
@@ -73,7 +72,8 @@ function init() {
     1, 1000 
   );
   
-  camera.position.set(4, 4, 4);
+  // FIX: Moved camera WAY back so it sees the large blocks
+  camera.position.set(50, 50, 50); 
   camera.lookAt(0, 0, 0);
 
   // 4. RENDERER
@@ -88,11 +88,11 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // SHADOW BOX (Maximized for Visibility)
+  // SHADOW BOX
   const shadowD = 250; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
@@ -104,7 +104,6 @@ function init() {
   dirLight.shadow.mapSize.height = 2048;
   
   scene.add(dirLight);
-  // Track the stack with light
   scene.add(dirLight.target);
 
   // Base Blocks
@@ -144,11 +143,18 @@ function startGame() {
     addLayer(-30, 0, originalBoxSize, originalBoxSize, "x");
   }
 
+  // Reset Camera
   if (camera) {
-    camera.position.set(4, 4, 4);
+    const aspect = window.innerWidth / window.innerHeight;
+    const d = ZOOM;
+    camera.left = -d * aspect;
+    camera.right = d * aspect;
+    camera.top = d;
+    camera.bottom = -d;
+    camera.position.set(50, 50, 50); // Keep it far back
     camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
     
-    // Reset Light
     if(dirLight) {
         dirLight.position.set(20, 60, 20);
         dirLight.target.position.set(0, 0, 0);
@@ -188,8 +194,7 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // CHANGE 3: PHYSICS DAMPENING
-  // Mass 1: Very Light (stops explosion)
+  // Mass 1 + Damping (Stops flying)
   let mass = falls ? 1 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
@@ -198,9 +203,8 @@ function generateBox(x, y, z, width, depth, falls) {
   body.position.set(x, y, z);
   
   if (falls) {
-      // ZERO SPIN + HIGH DAMPING = "DEAD DROP"
-      body.angularVelocity.set(0, 0, 0);
-      body.linearDamping = 0.9; // Air resistance
+      body.angularVelocity.set(0, 0, 0); // No Spin
+      body.linearDamping = 0.9; // High air resistance
   }
 
   world.addBody(body);
@@ -234,7 +238,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- SPEED RAMP (Start 0.005 -> +0.001) ---
+      // SPEED RAMP
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -252,7 +256,6 @@ function animation() {
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
-    // DYNAMIC LIGHT TRACKING (Prevents Invisible Bug)
     if (dirLight) {
         dirLight.position.y = camera.position.y + 60;
         dirLight.target.position.y = camera.position.y;
@@ -339,7 +342,7 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const d = CAMERA_WIDTH;
+  const d = ZOOM;
   camera.left = -d * aspect;
   camera.right = d * aspect;
   camera.top = d;
