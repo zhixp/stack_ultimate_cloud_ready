@@ -9,24 +9,27 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
-let dirLight; 
+let dirLight;
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-const boxHeight = 2;          // Thicker
-const originalBoxSize = 10;   // MASSIVE BLOCKS (Requested)
+// CHANGE 1: 5X SIZE (Titan Mode)
+const boxHeight = 5;          // Thick Slabs
+const originalBoxSize = 25;   // Massive Blocks
 
-// SPEED CONFIGURATION
+// SPEED
 const BASE_SPEED = 0.0005;      
 const SPEED_INCREMENT = 0.0002; 
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-const CAMERA_WIDTH = 50;       // Zoomed out to fit 10-unit blocks
-const TRAVEL_DISTANCE = 30;    // Wider travel for larger blocks
+// CHANGE 2: MASSIVE ZOOM OUT (To see the giant blocks)
+const ZOOM_SCALE = 150;       
+// CHANGE 3: WIDE TRAVEL (Proportional to block size)
+const TRAVEL_DISTANCE = 90;    
 
 // --- STATE ---
 let autoplay = false;
@@ -54,7 +57,7 @@ function init() {
 
   // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(0, -40, 0); // Very Heavy Gravity
+  world.gravity.set(0, -50, 0); // Scaled up gravity for huge blocks
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
@@ -63,15 +66,16 @@ function init() {
 
   // 3. CAMERA
   const aspect = window.innerWidth / window.innerHeight;
-  const d = CAMERA_WIDTH; 
+  const d = ZOOM_SCALE; 
   
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
-    1, 1000 
+    1, 5000 // Deep render distance
   );
   
-  camera.position.set(4, 4, 4);
+  // FIX: MOVE CAMERA BACK (So it's not inside the giant block)
+  camera.position.set(200, 200, 200);
   camera.lookAt(0, 0, 0);
 
   // 4. RENDERER
@@ -86,26 +90,28 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
+  // FIX: LIGHT POSITION FOR GIANTS
   dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(50, 200, 50); 
+  dirLight.position.set(100, 300, 100); 
   dirLight.castShadow = true;
   
-  const shadowD = 400; 
+  // FIX: TITAN SHADOW BOX
+  const shadowD = 600; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
   dirLight.shadow.camera.top = shadowD;
   dirLight.shadow.camera.bottom = -shadowD;
   dirLight.shadow.camera.near = 0.1;
-  dirLight.shadow.camera.far = 3000;
+  dirLight.shadow.camera.far = 5000;
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   
   scene.add(dirLight);
   scene.add(dirLight.target);
 
-  // Base Blocks
+  // Base Blocks (Start deeper)
   addLayer(0, 0, originalBoxSize, originalBoxSize);
-  addLayer(-50, 0, originalBoxSize, originalBoxSize, "x");
+  addLayer(-100, 0, originalBoxSize, originalBoxSize, "x");
 }
 
 function startGame() {
@@ -137,15 +143,15 @@ function startGame() {
     }
     
     addLayer(0, 0, originalBoxSize, originalBoxSize);
-    addLayer(-50, 0, originalBoxSize, originalBoxSize, "x");
+    addLayer(-100, 0, originalBoxSize, originalBoxSize, "x");
   }
 
   if (camera) {
-    camera.position.set(4, 4, 4);
+    camera.position.set(200, 200, 200);
     camera.lookAt(0, 0, 0);
     
     if(dirLight) {
-        dirLight.position.set(50, 200, 50);
+        dirLight.position.set(100, 300, 100);
         dirLight.target.position.set(0, 0, 0);
     }
   }
@@ -183,8 +189,9 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // FIX: MASS = 5 (Heavy, but controlled)
-  let mass = falls ? 5 : 0;
+  // MASS 97% REDUCTION (Dead Weight)
+  // For giant blocks, mass 1 is very light
+  let mass = falls ? 1 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -192,10 +199,8 @@ function generateBox(x, y, z, width, depth, falls) {
   body.position.set(x, y, z);
   
   if (falls) {
-      // LOW SPIN + LOW DAMPING
-      // This ensures it drops fast (Low Damping) but doesn't fly off sideways (Low Spin)
-      body.angularVelocity.set(0, 0.1, 0); 
-      body.linearDamping = 0.1; 
+      body.angularVelocity.set(0, 0, 0); // No spin
+      body.linearDamping = 0.95; // Max air resistance
   }
 
   world.addBody(body);
@@ -229,6 +234,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
+      // SPEED RAMP
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -246,8 +252,9 @@ function animation() {
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
+    // LIGHT TRACKING
     if (dirLight) {
-        dirLight.position.y = camera.position.y + 200;
+        dirLight.position.y = camera.position.y + 300;
         dirLight.target.position.y = camera.position.y;
     }
 
@@ -304,8 +311,8 @@ function splitBlockAndAddNextOneIfOverlaps() {
     hue += 4;
     updateBackground();
     
-    const nextX = direction == "x" ? topLayer.threejs.position.x : -50;
-    const nextZ = direction == "z" ? topLayer.threejs.position.z : -50;
+    const nextX = direction == "x" ? topLayer.threejs.position.x : -100;
+    const nextZ = direction == "z" ? topLayer.threejs.position.z : -100;
     const newWidth = topLayer.width;
     const newDepth = topLayer.depth;
     const nextDirection = direction == "x" ? "z" : "x";
@@ -332,7 +339,7 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const d = CAMERA_WIDTH;
+  const d = ZOOM_SCALE;
   camera.left = -d * aspect;
   camera.right = d * aspect;
   camera.top = d;
