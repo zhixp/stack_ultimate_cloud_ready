@@ -197,8 +197,8 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 1 + Damping
-  let mass = falls ? 10 : 0;
+  // UPDATE 1: INCREASE MASS (HEAVY)
+  let mass = falls ? 20 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -207,7 +207,8 @@ function generateBox(x, y, z, width, depth, falls) {
   
   if (falls) {
       body.angularVelocity.set(0, 0, 0); 
-      body.linearDamping = 0.5; 
+      // UPDATE 2: ZERO DAMPING (DROP LIKE A STONE)
+      body.linearDamping = 0.0; 
   }
 
   world.addBody(body);
