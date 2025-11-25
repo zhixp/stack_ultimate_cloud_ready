@@ -16,9 +16,8 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-// CHANGE 1: 3X SIZE SCALING
-const boxHeight = 3;          // Thicker slabs
-const originalBoxSize = 15;   // Massive base size
+const boxHeight = 2;          // Thicker
+const originalBoxSize = 10;   // MASSIVE BLOCKS (Requested)
 
 // SPEED CONFIGURATION
 const BASE_SPEED = 0.0005;      
@@ -26,10 +25,8 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-// CHANGE: ZOOM OUT (To fit 3x blocks)
-const CAMERA_WIDTH = 90;       
-// CHANGE: WIDER TRAVEL (To match block scale)
-const TRAVEL_DISTANCE = 50;    
+const CAMERA_WIDTH = 50;       // Zoomed out to fit 10-unit blocks
+const TRAVEL_DISTANCE = 30;    // Wider travel for larger blocks
 
 // --- STATE ---
 let autoplay = false;
@@ -57,7 +54,7 @@ function init() {
 
   // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(0, -30, 0); 
+  world.gravity.set(0, -40, 0); // Very Heavy Gravity
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
@@ -68,11 +65,10 @@ function init() {
   const aspect = window.innerWidth / window.innerHeight;
   const d = CAMERA_WIDTH; 
   
-  // DEEP FRUSTUM (Near -100, Far 3000)
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
-    -100, 3000 
+    1, 1000 
   );
   
   camera.position.set(4, 4, 4);
@@ -90,13 +86,10 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  // FIX: MOVED LIGHT HIGHER FOR HUGE BLOCKS
   dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(50, 200, 50); 
   dirLight.castShadow = true;
   
-  // FIX: MASSIVE SHADOW BOX (400)
-  // Covers the 3x larger travel distance so nothing fades out
   const shadowD = 400; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
@@ -190,9 +183,8 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // CHANGE 2: 97% MASS REDUCTION
-  // Mass 0.1 = Almost zero separation force
-  let mass = falls ? 0.1 : 0;
+  // FIX: MASS = 5 (Heavy, but controlled)
+  let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -200,8 +192,10 @@ function generateBox(x, y, z, width, depth, falls) {
   body.position.set(x, y, z);
   
   if (falls) {
-      body.angularVelocity.set(0, 0, 0); // No spin
-      body.linearDamping = 0.9; // Max air resistance
+      // LOW SPIN + LOW DAMPING
+      // This ensures it drops fast (Low Damping) but doesn't fly off sideways (Low Spin)
+      body.angularVelocity.set(0, 0.1, 0); 
+      body.linearDamping = 0.1; 
   }
 
   world.addBody(body);
@@ -252,7 +246,6 @@ function animation() {
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
-    // DYNAMIC LIGHT (Fixed Invisible Bug)
     if (dirLight) {
         dirLight.position.y = camera.position.y + 200;
         dirLight.target.position.y = camera.position.y;
