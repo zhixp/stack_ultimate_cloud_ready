@@ -24,11 +24,9 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-const CAMERA_WIDTH = 32;       
-
-// CHANGE: MASSIVE TRAVEL DISTANCE
-// Was 8 -> Now 25. This makes blocks sweep in from deep off-screen.
-const TRAVEL_DISTANCE = 25;    
+// CHANGE 1: ZOOM OUT 15% (Was 32 -> Now 38)
+const CAMERA_WIDTH = 38;       
+const TRAVEL_DISTANCE = 8;    
 
 // --- STATE ---
 let autoplay = false;
@@ -73,7 +71,7 @@ function init() {
 
   // 3. SCENE
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xd8b5cf);
+  scene.background = new THREE.Color(0xd8b5cf); 
 
   addLayer(0, 0, originalBoxSize, originalBoxSize);
   addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
@@ -81,13 +79,15 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
+  // CHANGE 2: LIGHT POSITION & SHADOW BOX
+  // Moved light higher (50) and wider (20) to cover the whole tower
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  dirLight.position.set(10, 20, 0);
+  dirLight.position.set(20, 50, 20); 
   dirLight.castShadow = true;
   
-  // CHANGE: WIDE SHADOW BOX
-  // Ensures shadows render even when block is far off-screen
-  const d = 100; 
+  // EXPANDED SHADOW BOUNDS (Fixes bottom/edge fading)
+  // Was 60 -> Now 150 (Massive coverage)
+  const d = 150; 
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
@@ -173,6 +173,7 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
+  // Mass 5 (Dead weight physics)
   let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
@@ -180,6 +181,7 @@ function generateBox(x, y, z, width, depth, falls) {
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
+  // Low spin (0.1)
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -216,7 +218,6 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- RAMPED SPEED CALCULATION ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
