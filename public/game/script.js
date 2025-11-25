@@ -24,7 +24,9 @@ const SPEED_INCREMENT = 0.0002;
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-const CAMERA_WIDTH = 40;       
+// CHANGE 1: CAMERA WIDTH (Was 40 -> Now 60)
+// Essential to keep the Wide Travel blocks inside the screen
+const CAMERA_WIDTH = 60;       
 const TRAVEL_DISTANCE = 25;    
 
 // --- STATE ---
@@ -33,11 +35,11 @@ let gameEnded;
 let isPlaying = false;
 let animationId = null;
 
-// COLOR STATE (The Palette System)
-let hue = 230;          // Start Hue
-let paletteCount = 0;   // Tracks 0-4 block cycle
-let isDarkening = true; // Toggles Light->Dark vs Dark->Light
-let targetBgColor = new THREE.Color(); // For smooth blending
+// COLOR STATE
+let hue = 230;          
+let paletteCount = 0;   
+let isDarkening = true; 
+let targetBgColor = new THREE.Color(); 
 
 const scoreElement = document.getElementById("score");
 const instructionsElement = document.getElementById("instructions");
@@ -52,7 +54,6 @@ function init() {
   stack = [];
   overhangs = [];
   
-  // Reset Color State
   hue = 230;
   paletteCount = 0;
   isDarkening = true;
@@ -70,8 +71,10 @@ function init() {
   const aspect = window.innerWidth / window.innerHeight;
   const height = CAMERA_WIDTH / aspect;
 
+  // CHANGE 2: FAR PLANE (Was 100 -> Now 1000)
+  // Prevents cutting off tall towers or deep debris
   camera = new THREE.OrthographicCamera(
-    CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 100
+    CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 1000
   );
   
   camera.position.set(4, 4, 4);
@@ -80,7 +83,7 @@ function init() {
   // 3. SCENE
   scene = new THREE.Scene();
   scene.background = new THREE.Color();
-  setTargetBackground(); // Initialize BG color
+  setTargetBackground(); 
   scene.background.copy(targetBgColor);
 
   addLayer(0, 0, originalBoxSize, originalBoxSize);
@@ -89,12 +92,14 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  // LIGHTING FIX (Invisible Edge)
+  // LIGHTING
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
   dirLight.position.set(50, 100, 50); 
   dirLight.castShadow = true;
   
-  const d = 150; 
+  // CHANGE 3: SHADOW BOX (Was 150 -> Now 200)
+  // Total coverage guarantee
+  const d = 200; 
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
@@ -118,7 +123,6 @@ function startGame() {
   stack = [];
   overhangs = [];
   
-  // Reset Colors
   hue = 230;
   paletteCount = 0;
   isDarkening = true;
@@ -162,9 +166,6 @@ function startGame() {
 
 // --- COLOR LOGIC ---
 function getCurrentBlockColor() {
-    // Logic: 4 steps of Lightness
-    // If darkening: 75 -> 70 -> 65 -> 60
-    // If lightening: 60 -> 65 -> 70 -> 75
     let lightness;
     if (isDarkening) {
         lightness = 75 - (paletteCount * 5);
@@ -175,20 +176,16 @@ function getCurrentBlockColor() {
 }
 
 function setTargetBackground() {
-    // Background is a pastel version of the current hue
-    // High lightness (85%), Low saturation (30%) for "blending" feel
     targetBgColor.setHSL(hue / 360, 0.3, 0.85);
 }
 
 function cycleColor() {
     paletteCount++;
-    
-    // Every 4 blocks, shift hue and reverse gradient
     if (paletteCount >= 4) {
         paletteCount = 0;
-        hue += 30; // Shift to next color theme
-        isDarkening = !isDarkening; // Reverse light/dark direction
-        setTargetBackground(); // Update background target
+        hue += 30; 
+        isDarkening = !isDarkening; 
+        setTargetBackground(); 
     }
 }
 
@@ -207,10 +204,7 @@ function addOverhang(x, z, width, depth) {
 
 function generateBox(x, y, z, width, depth, falls) {
   const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
-  
-  // GET THEME COLOR
   const color = getCurrentBlockColor();
-  
   const material = new THREE.MeshLambertMaterial({ color });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z);
@@ -220,7 +214,6 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 5 (Dead weight)
   let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
@@ -278,8 +271,6 @@ function animation() {
       }
     }
 
-    // BACKGROUND BLENDING
-    // Smoothly transition the current background to the target hue
     if (scene.background) {
         scene.background.lerp(targetBgColor, 0.02);
     }
@@ -338,7 +329,6 @@ function splitBlockAndAddNextOneIfOverlaps() {
     cutBox(topLayer, overlap, size, delta);
     clickOffsets.push(delta);
     
-    // UPDATE COLOR CYCLE
     cycleColor();
     
     const nextX = direction == "x" ? topLayer.threejs.position.x : -20;
