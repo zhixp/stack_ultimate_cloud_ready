@@ -9,6 +9,7 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
+let dirLight; // GLOBAL LIGHT ACCESS
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
@@ -18,14 +19,15 @@ let startTime = 0;
 const boxHeight = 1.5; 
 const originalBoxSize = 6.5; 
 
-// SPEED
+// SPEED CONFIGURATION
 const BASE_SPEED = 0.0005;      
 const SPEED_INCREMENT = 0.0002; 
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-const CAMERA_WIDTH = 32;       
-const TRAVEL_DISTANCE = 25;    
+const ZOOM = 2; 
+const CAMERA_WIDTH = 35; 
+const TRAVEL_DISTANCE = 25; 
 
 // --- STATE ---
 let autoplay = false;
@@ -59,14 +61,15 @@ function init() {
 
   // 2. SCENE
   scene = new THREE.Scene();
-  // No solid background; handled by CSS gradient
 
   // 3. CAMERA
   const aspect = window.innerWidth / window.innerHeight;
-  const height = CAMERA_WIDTH / aspect;
-
+  const d = 35; 
+  
   camera = new THREE.OrthographicCamera(
-    CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 1000
+    -d * aspect, d * aspect, 
+    d, -d, 
+    1, 1000 
   );
   
   camera.position.set(4, 4, 4);
@@ -84,12 +87,13 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  // DYNAMIC LIGHT SETUP
+  dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // SHADOW BOX (The Invisible Fix)
-  const shadowD = 150; 
+  // MASSIVE SHADOW BOX
+  const shadowD = 200; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
   dirLight.shadow.camera.top = shadowD;
@@ -97,7 +101,11 @@ function init() {
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   scene.add(dirLight);
+  
+  // Add Light Target to Scene so we can move it
+  scene.add(dirLight.target);
 
+  // Base Blocks
   addLayer(0, 0, originalBoxSize, originalBoxSize);
   addLayer(-30, 0, originalBoxSize, originalBoxSize, "x");
 }
@@ -135,20 +143,18 @@ function startGame() {
   }
 
   if (camera) {
-    const aspect = window.innerWidth / window.innerHeight;
-    const height = CAMERA_WIDTH / aspect;
-    camera.left = CAMERA_WIDTH / -2;
-    camera.right = CAMERA_WIDTH / 2;
-    camera.top = height / 2;
-    camera.bottom = height / -2;
     camera.position.set(4, 4, 4);
     camera.lookAt(0, 0, 0);
-    camera.updateProjectionMatrix();
+    
+    // Reset Light
+    if(dirLight) {
+        dirLight.position.set(20, 60, 20);
+        dirLight.target.position.set(0, 0, 0);
+    }
   }
 }
 
 function updateBackground() {
-    // Michael's Exact HSL Gradient
     const h1 = hue % 360;
     const h2 = (hue + 40) % 360;
     document.body.style.background = `linear-gradient(180deg, hsl(${h1}, 50%, 80%) 0%, hsl(${h2}, 50%, 90%) 100%)`;
@@ -170,7 +176,6 @@ function addOverhang(x, z, width, depth) {
 
 function generateBox(x, y, z, width, depth, falls) {
   const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
-  // Michael's Exact Block Color
   const color = new THREE.Color(`hsl(${hue}, 60%, 65%)`);
   const material = new THREE.MeshLambertMaterial({ color });
   const mesh = new THREE.Mesh(geometry, material);
@@ -181,8 +186,8 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 5
-  let mass = falls ? 5 : 0;
+  // Mass 0.5 (No Explosion)
+  let mass = falls ? 0.5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -241,6 +246,14 @@ function animation() {
 
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
+
+    // FIX: LIGHT FOLLOWING CAMERA
+    if (dirLight) {
+        // Light stays 60 units above the current camera focus
+        dirLight.position.y = camera.position.y + 60;
+        // Target stays at the level of the stack
+        dirLight.target.position.y = camera.position.y;
+    }
 
     updatePhysics(timePassed);
     renderer.render(scene, camera);
@@ -323,11 +336,11 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const height = CAMERA_WIDTH / aspect;
-  camera.left = CAMERA_WIDTH / -2;
-  camera.right = CAMERA_WIDTH / 2;
-  camera.top = height / 2;
-  camera.bottom = height / -2;
+  const d = 35;
+  camera.left = -d * aspect;
+  camera.right = d * aspect;
+  camera.top = d;
+  camera.bottom = -d;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
