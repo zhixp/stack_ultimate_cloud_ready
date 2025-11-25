@@ -15,19 +15,20 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-const boxHeight = 1.5; // Kept the "Chunky" height
-// CHANGE 4: 30% LARGER BLOCKS (Was 5 -> Now 6.5)
+const boxHeight = 1.5; 
 const originalBoxSize = 6.5; 
 
-// CHANGE 2: ULTRA SLOW SPEED CONFIG
-const BASE_SPEED = 0.0005;      // Extremely slow start
-const SPEED_INCREMENT = 0.0002; // +0.0002 every 4 blocks
+// SPEED CONFIGURATION
+const BASE_SPEED = 0.0005;      
+const SPEED_INCREMENT = 0.0002; 
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
 const CAMERA_WIDTH = 32;       
-// CHANGE 2: REDUCED TRAVEL (Was 10 -> Now 8)
-const TRAVEL_DISTANCE = 8;    
+
+// CHANGE: MASSIVE TRAVEL DISTANCE
+// Was 8 -> Now 25. This makes blocks sweep in from deep off-screen.
+const TRAVEL_DISTANCE = 25;    
 
 // --- STATE ---
 let autoplay = false;
@@ -72,7 +73,7 @@ function init() {
 
   // 3. SCENE
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xd8b5cf); // Premium Pink
+  scene.background = new THREE.Color(0xd8b5cf);
 
   addLayer(0, 0, originalBoxSize, originalBoxSize);
   addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
@@ -84,8 +85,9 @@ function init() {
   dirLight.position.set(10, 20, 0);
   dirLight.castShadow = true;
   
-  // CHANGE 3: INVISIBLE EDGE FIX
-  const d = 60; // Wide coverage prevents clipping
+  // CHANGE: WIDE SHADOW BOX
+  // Ensures shadows render even when block is far off-screen
+  const d = 100; 
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
@@ -171,8 +173,6 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // CHANGE 1: MASS REDUCTION (Dead Weight)
-  // Reduced from 50 to 5.
   let mass = falls ? 5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
@@ -180,8 +180,6 @@ function generateBox(x, y, z, width, depth, falls) {
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
-  // CHANGE 1: SPIN DAMPENING
-  // Reduced from 5 to 0.1
   if (falls) {
       const spin = Math.random() * 0.1;
       body.angularVelocity.set(spin, 0, spin);
@@ -218,6 +216,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
+      // --- RAMPED SPEED CALCULATION ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
