@@ -16,20 +16,20 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-const boxHeight = 5;          // Thick Slabs
-const originalBoxSize = 25;   // Massive Blocks
+// CHANGE 1: 33% LARGER (Titan Scale)
+const boxHeight = 6.5;          
+const originalBoxSize = 33;   
 
-// SPEED
+// SPEED CONFIG
 const BASE_SPEED = 0.0005;      
 const SPEED_INCREMENT = 0.0002; 
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
-// CHANGE: ZOOMED IN (Was 150 -> Now 100)
-// This makes the blocks look larger/closer without clipping
-const ZOOM_SCALE = 100;       
-const TRAVEL_DISTANCE = 50;    
-const CAMERA_OFFSET_Y = 200;
+// CHANGE: SCALED UP TO FIT NEW BLOCKS
+const ZOOM_SCALE = 200;       
+const TRAVEL_DISTANCE = 65;    // 33% Wider Travel
+const CAMERA_OFFSET_Y = 300;   // Higher Camera
 
 // --- STATE ---
 let autoplay = false;
@@ -71,11 +71,10 @@ function init() {
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
-    1, 5000 
+    1, 8000 
   );
   
-  // Position stays far back to avoid clipping
-  camera.position.set(200, CAMERA_OFFSET_Y, 200);
+  camera.position.set(300, 300, 300);
   camera.lookAt(0, 0, 0);
 
   // 4. RENDERER
@@ -91,16 +90,17 @@ function init() {
   scene.add(ambientLight);
 
   dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(100, 300, 100); 
+  dirLight.position.set(150, 400, 150); 
   dirLight.castShadow = true;
   
-  const shadowD = 600; 
+  // FIX: SHADOW BOX SCALED FOR TITAN BLOCKS
+  const shadowD = 800; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
   dirLight.shadow.camera.top = shadowD;
   dirLight.shadow.camera.bottom = -shadowD;
   dirLight.shadow.camera.near = 0.1;
-  dirLight.shadow.camera.far = 5000;
+  dirLight.shadow.camera.far = 8000;
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
   
@@ -109,7 +109,7 @@ function init() {
 
   // Base Blocks
   addLayer(0, 0, originalBoxSize, originalBoxSize);
-  addLayer(-100, 0, originalBoxSize, originalBoxSize, "x");
+  addLayer(-150, 0, originalBoxSize, originalBoxSize, "x");
 }
 
 function startGame() {
@@ -141,24 +141,15 @@ function startGame() {
     }
     
     addLayer(0, 0, originalBoxSize, originalBoxSize);
-    addLayer(-100, 0, originalBoxSize, originalBoxSize, "x");
+    addLayer(-150, 0, originalBoxSize, originalBoxSize, "x");
   }
 
   if (camera) {
-    const d = ZOOM_SCALE;
-    const aspect = window.innerWidth / window.innerHeight;
-    // Recalculate frustum
-    camera.left = -d * aspect;
-    camera.right = d * aspect;
-    camera.top = d;
-    camera.bottom = -d;
-    
-    camera.position.set(200, CAMERA_OFFSET_Y, 200);
+    camera.position.set(300, 300, 300);
     camera.lookAt(0, 0, 0);
-    camera.updateProjectionMatrix();
     
     if(dirLight) {
-        dirLight.position.set(100, 300, 100);
+        dirLight.position.set(150, 400, 150);
         dirLight.target.position.set(0, 0, 0);
     }
   }
@@ -196,8 +187,8 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 1 + Damping
-  let mass = falls ? 1 : 0;
+  // CHANGE 2: INCREASED MASS (250% of previous 1.0 = 3.5)
+  let mass = falls ? 3.5 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -205,7 +196,8 @@ function generateBox(x, y, z, width, depth, falls) {
   body.position.set(x, y, z);
   
   if (falls) {
-      body.angularVelocity.set(0, 0, 0); 
+      body.angularVelocity.set(0, 0, 0); // No spin
+      // High Damping to prevent trembling
       body.linearDamping = 0.9; 
   }
 
@@ -258,7 +250,7 @@ function animation() {
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
     if (dirLight) {
-        dirLight.position.y = camera.position.y + 100;
+        dirLight.position.y = camera.position.y + 300;
         dirLight.target.position.y = camera.position.y - 200;
     }
 
@@ -315,8 +307,8 @@ function splitBlockAndAddNextOneIfOverlaps() {
     hue += 4;
     updateBackground();
     
-    const nextX = direction == "x" ? topLayer.threejs.position.x : -100;
-    const nextZ = direction == "z" ? topLayer.threejs.position.z : -100;
+    const nextX = direction == "x" ? topLayer.threejs.position.x : -150;
+    const nextZ = direction == "z" ? topLayer.threejs.position.z : -150;
     const newWidth = topLayer.width;
     const newDepth = topLayer.depth;
     const nextDirection = direction == "x" ? "z" : "x";
