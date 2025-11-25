@@ -18,13 +18,14 @@ let startTime = 0;
 const boxHeight = 1;
 const originalBoxSize = 4;
 
-// SPEED CONFIGURATION (DYNAMIC RAMP)
-const BASE_SPEED = 0.003;      // Starts very comfortable
-const SPEED_INCREMENT = 0.0002; // Adds speed every layer
-const MAX_SPEED = 0.015;       // Cap it so it's not impossible
+// SPEED CONFIGURATION (Ramped)
+const INITIAL_SPEED = 0.001;   // Starts very slow (Speed 1)
+const SPEED_STEP = 0.001;      // +1 Speed unit
+const SPEED_INTERVAL = 4;      // Every 4 blocks
 
-// CAMERA
-const CAMERA_WIDTH = 26;  
+// VISUALS
+const CAMERA_WIDTH = 32;       // FIX: 25% Zoom Out
+const TRAVEL_DISTANCE = 8.5;   // FIX: 30% More Travel
 
 // --- STATE ---
 let autoplay = false;
@@ -203,13 +204,13 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- DYNAMIC SPEED LOGIC ---
-      const currentLevel = stack.length;
-      // Formula: Base + (Level * Increment), capped at Max
-      let currentSpeed = BASE_SPEED + (currentLevel * SPEED_INCREMENT);
-      if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
-
-      const movePos = Math.sin(Date.now() * currentSpeed) * 6.5; 
+      // --- SPEED CALCULATION ---
+      const level = stack.length; 
+      // Speed = Initial + (Level / 4) * Step
+      // Math.floor(level/4) means it increases every 4 blocks
+      let currentSpeed = INITIAL_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_STEP);
+      
+      const movePos = Math.sin(Date.now() * currentSpeed) * TRAVEL_DISTANCE;
       
       if (topLayer.direction === 'x') {
         topLayer.threejs.position.x = movePos;

@@ -1,14 +1,16 @@
 /* global BigInt */
 import { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, keccak256, toBytes, parseAbiItem } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, keccak256, toBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import Game from './Game';
 import Modal from './components/Modal';
 import GameOverModal from './components/GameOverModal';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from './abi';
 
-const BACKEND_API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api/submit-score";
+// HARDCODED PRODUCTION URL (FIXES "FAILED TO FETCH" ERROR)
+const BACKEND_API_URL = "https://stack-backend-node.onrender.com/api/submit-score";
+
 const ENTRY_FEE = "0.00001";
 const GAS_BUFFER = 0.00005;
 
@@ -43,14 +45,9 @@ function App() {
   const [showWalletMgr, setShowWalletMgr] = useState(false);
   const [viewPrivateKey, setViewPrivateKey] = useState(false);
 
-  // LEADERBOARD STATE
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [leaderboardData, setLeaderboardData] = useState([]);
-  const [isLoadingLeaders, setIsLoadingLeaders] = useState(false);
-
   const showInfo = (title, content, type = "info") => setInfoModal({ open: true, title, content, type });
 
-  // --- SAFE INITIALIZATION ---
+  // --- 1. SAFE INITIALIZATION ---
   useEffect(() => {
     const storedKey = localStorage.getItem("stack_burner_key");
     if (storedKey && storedKey.startsWith("0x") && storedKey.length === 66) {
@@ -63,44 +60,13 @@ function App() {
     }
   }, []);
 
-  // --- LEADERBOARD FETCH ---
-  const handleShowLeaderboard = async () => {
-      setShowLeaderboard(true);
-      setIsLoadingLeaders(true);
-      try {
-          const publicClient = createPublicClient({ chain: abstractChain, transport: http() });
-          
-          // Fetch 'NewHighScore' events from Block 0 to Now
-          const logs = await publicClient.getLogs({  
-            address: CONTRACT_ADDRESS,
-            event: parseAbiItem('event NewHighScore(address indexed player, uint256 score)'),
-            fromBlock: 'earliest', 
-            toBlock: 'latest'
-          });
-
-          // Process Logs
-          const scores = logs.map(log => ({
-              player: log.args.player,
-              score: Number(log.args.score)
-          }));
-
-          // Sort & Deduplicate (Keep highest per player)
-          // Simplified: Just show top 30 events for raw history
-          const sorted = scores.sort((a, b) => b.score - a.score).slice(0, 30);
-          
-          setLeaderboardData(sorted);
-      } catch (e) {
-          console.error(e);
-      } finally {
-          setIsLoadingLeaders(false);
-      }
-  };
-
+  // --- 2. BULLETPROOF RESTORE ---
   const handleRestoreWallet = async () => {
       if (!authenticated || wallets.length === 0) {
-          showInfo("Connection Lost", "Please Logout and Login again.", "error");
+          showInfo("Connection Lost", "Please Logout and Login again to refresh MetaMask.", "error");
           return;
       }
+
       try {
           setIsWriting(true);
           const wallet = wallets[0]; 
@@ -112,8 +78,8 @@ function App() {
               account: wallet.address,
               message: "Generate My Stack Ultimate Wallet Key\n\n(Signing this will restore your game balance)" 
           });
-          const deterministicKey = keccak256(toBytes(signature));
           
+          const deterministicKey = keccak256(toBytes(signature));
           localStorage.setItem("stack_burner_key", deterministicKey);
           const account = privateKeyToAccount(deterministicKey);
           setBurnerAddress(account.address);
@@ -128,6 +94,7 @@ function App() {
       }
   };
 
+  // --- DATA LOOP ---
   const fetchGameState = async () => {
     try {
       const publicClient = createPublicClient({ chain: abstractChain, transport: http() });
@@ -278,40 +245,6 @@ function App() {
       <Modal isOpen={infoModal.open} onClose={() => setInfoModal({...infoModal, open: false})} title={infoModal.title} type={infoModal.type}>{infoModal.content}</Modal>
       {showResult && <GameOverModal score={lastScore} isRecording={isRecordingScore} onClose={() => setShowResult(false)} onReplay={handleStartGame} />}
 
-      {/* LEADERBOARD MODAL */}
-      {showLeaderboard && (
-        <div className="ui-modal-overlay" style={{
-            position:'fixed', top:0, left:0, width:'100%', height:'100%', 
-            background:'rgba(0,0,0,0.9)', zIndex:11000, display:'flex', justifyContent:'center', alignItems:'center'
-        }}>
-            <div style={{background:'#1a1a1a', padding:'20px', borderRadius:'15px', border:'1px solid #444', width:'90%', maxWidth:'500px', maxHeight:'80vh', overflowY:'auto'}}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
-                    <h2 style={{color:'#fff', margin:0}}>🏆 TOP 30</h2>
-                    <button onClick={() => setShowLeaderboard(false)} style={{background:'transparent', border:'none', color:'#fff', fontSize:'1.5rem', cursor:'pointer'}}>×</button>
-                </div>
-                
-                {isLoadingLeaders ? (
-                    <div style={{textAlign:'center', color:'#aaa', padding:'20px'}}>Loading from Blockchain...</div>
-                ) : (
-                    <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-                        {leaderboardData.length === 0 ? <div style={{textAlign:'center', color:'#666'}}>No records yet.</div> : null}
-                        {leaderboardData.map((entry, index) => (
-                            <div key={index} style={{display:'flex', justifyContent:'space-between', background:'#111', padding:'10px', borderRadius:'8px', border:'1px solid #333'}}>
-                                <div style={{display:'flex', gap:'10px'}}>
-                                    <span style={{color: index === 0 ? '#ffd700' : index === 1 ? '#c0c0c0' : index === 2 ? '#cd7f32' : '#666', fontWeight:'bold'}}>
-                                        #{index + 1}
-                                    </span>
-                                    <span style={{color:'#aaa', fontFamily:'monospace'}}>{entry.player.substring(0, 8)}...</span>
-                                </div>
-                                <div style={{color:'#0f0', fontWeight:'bold'}}>{entry.score}</div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-      )}
-
       {showWalletMgr && (
         <div className="ui-modal-overlay" style={{
             position:'fixed', top:0, left:0, width:'100%', height:'100%', 
@@ -352,7 +285,6 @@ function App() {
                 </div>
                 
                 <div className="ui-shop-section" style={{marginTop: '20px', padding: '20px', border: '1px solid #444', borderRadius: '10px', background: 'rgba(0,0,0,0.3)'}}>
-                    
                     {!burnerAddress ? (
                         <div style={{textAlign:'center', padding:'20px'}}>
                             <div style={{color:'#aaa', marginBottom:'15px'}}>Initialize game wallet to play</div>
@@ -365,10 +297,7 @@ function App() {
                         <>
                             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
                                 <div style={{color: '#aaa', fontSize: '0.9rem', letterSpacing: '1px', textTransform: 'uppercase'}}>In-Game Wallet</div>
-                                <div style={{display:'flex', gap:'10px'}}>
-                                    <button onClick={handleShowLeaderboard} style={{background:'transparent', border:'1px solid #555', color:'#0ff', padding:'5px 10px', borderRadius:'5px', cursor:'pointer', fontSize:'0.8rem'}}>🏆 LEADERS</button>
-                                    <button onClick={() => setShowWalletMgr(true)} style={{background:'transparent', border:'1px solid #555', color:'#aaa', padding:'5px 10px', borderRadius:'5px', cursor:'pointer', fontSize:'0.8rem'}}>⚙️</button>
-                                </div>
+                                <button onClick={() => setShowWalletMgr(true)} style={{background:'transparent', border:'1px solid #555', color:'#aaa', padding:'5px 10px', borderRadius:'5px', cursor:'pointer', fontSize:'0.8rem'}}>⚙️</button>
                             </div>
                             <div className="ui-value" style={{fontSize: '2rem', marginBottom: '20px', color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.1)'}}>{Number(burnerBalance).toFixed(5)} ETH</div>
                             <div style={{display: 'flex', gap: '10px', marginBottom: '15px'}}>
