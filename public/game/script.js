@@ -9,8 +9,6 @@ let world;
 let lastTime;
 let stack;
 let overhangs;
-// GLOBAL LIGHT (To track the stack)
-let dirLight; 
 
 // --- SENTINEL BIOMETRICS ---
 let clickOffsets = [];
@@ -18,17 +16,18 @@ let startTime = 0;
 
 // --- CONFIGURATION ---
 const boxHeight = 1.5; 
-const originalBoxSize = 6.5; 
+// CHANGE 1: MASSIVE BLOCKS (Was 6.5 -> Now 8)
+const originalBoxSize = 8; 
 
-// SPEED CONFIG
-const BASE_SPEED = 0.0005;      
-const SPEED_INCREMENT = 0.0002; 
-const SPEED_INTERVAL = 4;       
+// CHANGE 2: USER SPEED REQUEST
+const BASE_SPEED = 0.005;      // Snappy Start
+const SPEED_INCREMENT = 0.001; // Aggressive Ramp (+0.001)
+const SPEED_INTERVAL = 4;      // Every 4 blocks
 
 // VISUALS
-// ZOOM: 35 is the Sweet Spot (Not too close, not too far)
-const ZOOM = 35; 
-const TRAVEL_DISTANCE = 25; 
+// Adjusted Camera to fit the larger blocks + travel
+const CAMERA_WIDTH = 45;       
+const TRAVEL_DISTANCE = 25;    
 
 // --- STATE ---
 let autoplay = false;
@@ -62,17 +61,16 @@ function init() {
 
   // 2. SCENE
   scene = new THREE.Scene();
+  // Background handled by CSS
 
   // 3. CAMERA
   const aspect = window.innerWidth / window.innerHeight;
-  const d = ZOOM; 
+  const d = CAMERA_WIDTH; 
   
-  // FIX: DEEP FRUSTUM (Near -100 to Far 2000)
-  // This guarantees blocks never clip out, even if they fall deep or swing wide
   camera = new THREE.OrthographicCamera(
     -d * aspect, d * aspect, 
     d, -d, 
-    -100, 2000 
+    1, 1000 
   );
   
   camera.position.set(4, 4, 4);
@@ -90,11 +88,11 @@ function init() {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(20, 60, 20); 
   dirLight.castShadow = true;
   
-  // SHADOW BOX (Massive)
+  // SHADOW BOX (Maximized for Visibility)
   const shadowD = 250; 
   dirLight.shadow.camera.left = -shadowD;
   dirLight.shadow.camera.right = shadowD;
@@ -106,7 +104,7 @@ function init() {
   dirLight.shadow.mapSize.height = 2048;
   
   scene.add(dirLight);
-  // CRITICAL: Add Target to scene so we can move it
+  // Track the stack with light
   scene.add(dirLight.target);
 
   // Base Blocks
@@ -190,18 +188,19 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // Mass 0.5 (Perfect Non-Explosive Physics)
-  let mass = falls ? 0.5 : 0;
+  // CHANGE 3: PHYSICS DAMPENING
+  // Mass 1: Very Light (stops explosion)
+  let mass = falls ? 1 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
-  // Low Spin
   if (falls) {
-      const spin = Math.random() * 0.1;
-      body.angularVelocity.set(spin, 0, spin);
+      // ZERO SPIN + HIGH DAMPING = "DEAD DROP"
+      body.angularVelocity.set(0, 0, 0);
+      body.linearDamping = 0.9; // Air resistance
   }
 
   world.addBody(body);
@@ -235,7 +234,7 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // --- SPEED ---
+      // --- SPEED RAMP (Start 0.005 -> +0.001) ---
       const level = stack.length; 
       let currentSpeed = BASE_SPEED + (Math.floor(level / SPEED_INTERVAL) * SPEED_INCREMENT);
       
@@ -253,11 +252,9 @@ function animation() {
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
-    // --- THE INVISIBLE FIX (Dynamic Light Tracking) ---
+    // DYNAMIC LIGHT TRACKING (Prevents Invisible Bug)
     if (dirLight) {
-        // Keep the light 60 units above the camera focus
         dirLight.position.y = camera.position.y + 60;
-        // Keep the target pointed at the camera focus (the stack top)
         dirLight.target.position.y = camera.position.y;
     }
 
@@ -342,7 +339,7 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const d = ZOOM;
+  const d = CAMERA_WIDTH;
   camera.left = -d * aspect;
   camera.right = d * aspect;
   camera.top = d;
