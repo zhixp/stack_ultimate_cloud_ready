@@ -17,8 +17,14 @@ let startTime = 0;
 // --- CONFIGURATION ---
 const boxHeight = 1;
 const originalBoxSize = 4;
-const GAME_SPEED = 0.004; // FIX: Smooth, playable speed
-const CAMERA_WIDTH = 22;  // FIX: Zoomed in for better visibility (was 30)
+
+// SPEED CONFIGURATION (DYNAMIC RAMP)
+const BASE_SPEED = 0.003;      // Starts very comfortable
+const SPEED_INCREMENT = 0.0002; // Adds speed every layer
+const MAX_SPEED = 0.015;       // Cap it so it's not impossible
+
+// CAMERA
+const CAMERA_WIDTH = 26;  
 
 // --- STATE ---
 let autoplay = false;
@@ -39,19 +45,18 @@ function init() {
   lastTime = 0;
   stack = [];
   overhangs = [];
-  hue = 200; // Start Blue
+  hue = 200; 
 
-  // SENTINEL RESET
   clickOffsets = [];
   startTime = 0;
 
-  // 1. PHYSICS SETUP
+  // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(0, -30, 0); // Heavy Gravity for snappy falls
+  world.gravity.set(0, -30, 0); 
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
-  // 2. CAMERA (FIXED ANGLE)
+  // 2. CAMERA
   const aspect = window.innerWidth / window.innerHeight;
   const height = CAMERA_WIDTH / aspect;
 
@@ -59,11 +64,10 @@ function init() {
     CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 100
   );
   
-  // Standard Isometric View
   camera.position.set(4, 4, 4);
   camera.lookAt(0, 0, 0);
 
-  // 3. SCENE & LIGHTING
+  // 3. SCENE
   scene = new THREE.Scene();
   scene.background = new THREE.Color(`hsl(${hue}, 20%, 80%)`);
 
@@ -95,7 +99,6 @@ function startGame() {
   overhangs = [];
   hue = 200;
   
-  // START TRACKING
   clickOffsets = [];
   startTime = Date.now();
 
@@ -114,13 +117,11 @@ function startGame() {
       scene.remove(mesh);
     }
     
-    // Reset Background
     scene.background = new THREE.Color(`hsl(${hue}, 20%, 80%)`);
     addLayer(0, 0, originalBoxSize, originalBoxSize);
     addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
   }
 
-  // Reset Camera Position
   if (camera) {
     const aspect = window.innerWidth / window.innerHeight;
     const height = CAMERA_WIDTH / aspect;
@@ -159,7 +160,6 @@ function generateBox(x, y, z, width, depth, falls) {
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
-  // HEAVY MASS = GOOD PHYSICS
   let mass = falls ? 50 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
@@ -167,7 +167,6 @@ function generateBox(x, y, z, width, depth, falls) {
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
   
-  // Tumble Effect
   if (falls) {
       const spin = Math.random() * 5;
       body.angularVelocity.set(spin, 0, spin);
@@ -204,8 +203,13 @@ function animation() {
     const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      // FIX: Use GAME_SPEED constant for consistent gameplay
-      const movePos = Math.sin(Date.now() * GAME_SPEED) * 5; 
+      // --- DYNAMIC SPEED LOGIC ---
+      const currentLevel = stack.length;
+      // Formula: Base + (Level * Increment), capped at Max
+      let currentSpeed = BASE_SPEED + (currentLevel * SPEED_INCREMENT);
+      if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
+
+      const movePos = Math.sin(Date.now() * currentSpeed) * 6.5; 
       
       if (topLayer.direction === 'x') {
         topLayer.threejs.position.x = movePos;
@@ -216,7 +220,6 @@ function animation() {
       }
     }
 
-    // Camera follow logic
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
@@ -247,8 +250,6 @@ function missedTheSpot() {
   const finalScore = stack.length - 1; 
   const duration = Date.now() - startTime;
   
-  console.log("Game Over. Sending Score:", finalScore);
-  
   if (finalScore > 0) {
       const payload = { 
           type: "GAME_OVER", 
@@ -272,7 +273,6 @@ function splitBlockAndAddNextOneIfOverlaps() {
   if (overlap > 0) {
     cutBox(topLayer, overlap, size, delta);
     
-    // CAPTURE OFFSET
     clickOffsets.push(delta);
 
     hue += 4;
