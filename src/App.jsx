@@ -2,55 +2,76 @@
 import { useState, useEffect } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther } from 'viem';
-import Game from './Game.jsx';
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from './abi.js';
+import { privateKeyToAccount } from 'viem/accounts';
+import Game from './Game';
+import Modal from './components/Modal';
+import GameOverModal from './components/GameOverModal';
+import { CONTRACT_ADDRESS, CONTRACT_ABI } from './abi';
 
-// --- CONFIGURATION ---
-const BACKEND_API_URL = "http://localhost:3000/api/submit-score"; 
+const BACKEND_API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api/submit-score";
+const ENTRY_FEE = "0.00001";
 
 const abstractChain = {
-  id: 11124,
-  name: 'Abstract Testnet',
-  network: 'abstract-testnet',
+  id: 11124, name: 'Abstract Testnet', network: 'abstract-testnet',
   nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
   rpcUrls: { default: { http: ['https://api.testnet.abs.xyz'] } },
 };
 
 function App() {
-  // --- HOOKS ---
   const { login, authenticated, user, logout } = usePrivy();
   const { wallets } = useWallets();
   
-  // --- STATE ---
+  // State
   const [potSize, setPotSize] = useState("0");
   const [highScore, setHighScore] = useState("0");
-  const [king, setKing] = useState("0x00...00");
-  const [credits, setCredits] = useState(0);
   const [targetScore, setTargetScore] = useState(0);
   
-  const [buyAmount, setBuyAmount] = useState(5);
+  const [burnerBalance, setBurnerBalance] = useState("0");
+  const [burnerAddress, setBurnerAddress] = useState("");
+  const [depositAmount, setDepositAmount] = useState("0.001"); 
+  
   const [isGameActive, setIsGameActive] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
+  
+  // Modals
+  const [infoModal, setInfoModal] = useState({ open: false, title: "", content: "", type: "info" });
+  const [showResult, setShowResult] = useState(false);
+  const [lastScore, setLastScore] = useState(0);
+  const [isRecordingScore, setIsRecordingScore] = useState(false);
 
-  // --- LOGIC ---
+  const showInfo = (title, content, type = "info") => setInfoModal({ open: true, title, content, type });
+
+  // --- INIT BURNER ---
+  useEffect(() => {
+    let pKey = localStorage.getItem("stack_burner_key");
+    if (!pKey) {
+        const randomKey = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+        localStorage.setItem("stack_burner_key", randomKey);
+        pKey = randomKey;
+    }
+    const account = privateKeyToAccount(pKey);
+    setBurnerAddress(account.address);
+  }, []);
+
+  // --- DATA LOOP ---
   const fetchGameState = async () => {
     try {
       const publicClient = createPublicClient({ chain: abstractChain, transport: http() });
-      const playerAddress = user?.wallet?.address || "0x0000000000000000000000000000000000000000";
       
-      const [pot, hs, k, target, creds] = await Promise.all([
+      const [pot, hs, target] = await Promise.all([
         publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'pot' }),
         publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'currentHighScore' }),
-        publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'currentKing' }),
         publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'targetScore' }),
-        publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'credits', args: [playerAddress] })
       ]);
-
       setPotSize(formatEther(pot));
       setHighScore(hs.toString());
-      setKing(k);
       setTargetScore(Number(target));
-      setCredits(Number(creds));
+
+      if (burnerAddress) {
+          const bal = await publicClient.getBalance({ address: burnerAddress });
+          setBurnerBalance(formatEther(bal));
+      }
     } catch (error) { console.error("Read Error:", error); }
   };
 
@@ -58,212 +79,215 @@ function App() {
     fetchGameState();
     const interval = setInterval(fetchGameState, 5000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, burnerAddress]);
 
-  const getSigner = async () => {
-    const wallet = wallets[0];
-    if (!wallet) throw new Error("No wallet connected");
-    await wallet.switchChain(11124);
-    const provider = await wallet.getEthereumProvider();
-    return createWalletClient({ account: wallet.address, chain: abstractChain, transport: custom(provider) });
+  // --- DEPOSIT (Main -> Burner) ---
+  const handleTopUp = async () => {
+      if (!depositAmount || parseFloat(depositAmount) <= 0) {
+          showInfo("Error", "Please enter a valid amount.", "error");
+          return;
+      }
+
+      try {
+          setIsWriting(true);
+          const wallet = wallets[0];
+          await wallet.switchChain(11124);
+          const provider = await wallet.getEthereumProvider();
+          const client = createWalletClient({ account: wallet.address, chain: abstractChain, transport: custom(provider) });
+          
+          await client.sendTransaction({ 
+              to: burnerAddress, 
+              value: parseEther(depositAmount) 
+          });
+          
+          showInfo("Success", `Deposited ${depositAmount} ETH!`, "success");
+          setTimeout(fetchGameState, 2000); 
+      } catch(e) { 
+          console.error(e);
+          showInfo("Deposit Failed", "Check Main Wallet balance.", "error"); 
+      } finally { 
+          setIsWriting(false); 
+      }
   };
 
-  const handleBuyCredits = async () => {
-    try {
-      setIsWriting(true);
-      const client = await getSigner();
-      const [address] = await client.getAddresses();
-      const costString = (buyAmount * 0.00001).toFixed(5).toString();
+  // --- WITHDRAW (Burner -> Main) ---
+  const handleWithdraw = async () => {
+      if (parseFloat(burnerBalance) <= 0) {
+          showInfo("Error", "Wallet is empty.", "error");
+          return;
+      }
 
-      await client.writeContract({
-        address: CONTRACT_ADDRESS, 
-        abi: CONTRACT_ABI, 
-        functionName: 'buyCredits',
-        account: address, 
-        value: parseEther(costString),
-      });
-      
-      alert(`Success! Purchased ${buyAmount} Credits.`);
-      setIsWriting(false);
-      fetchGameState(); 
-    } catch (error) {
-      console.error(error);
-      setIsWriting(false);
-      alert("Purchase Failed: " + (error.shortMessage || error.message));
-    }
+      try {
+          setIsWriting(true);
+          const pKey = localStorage.getItem("stack_burner_key");
+          const account = privateKeyToAccount(pKey);
+          
+          // NOTE: We use the standard public client for the Burner
+          const client = createWalletClient({ account, chain: abstractChain, transport: http() });
+          const publicClient = createPublicClient({ chain: abstractChain, transport: http() });
+
+          // 1. Get current balance
+          const balance = await publicClient.getBalance({ address: burnerAddress });
+          
+          // 2. STATIC GAS BUFFER (0.0002 ETH)
+          // This covers L2 execution + L1 Data fees safely.
+          const buffer = parseEther("0.0002");
+          
+          // 3. Calculate Max Sendable
+          const valueToSend = balance - buffer;
+
+          if (valueToSend <= 0n) {
+              showInfo("Balance Too Low", "You need at least 0.0002 ETH to cover gas fees.", "error");
+              return;
+          }
+
+          const userAddress = user?.wallet?.address;
+          if (!userAddress) throw new Error("No main wallet connected");
+
+          // 4. Send Transaction
+          // NOTE: No MetaMask popup here. The Burner signs this instantly.
+          await client.sendTransaction({
+              to: userAddress,
+              value: valueToSend
+          });
+
+          showInfo("Success", `Withdrew ~${formatEther(valueToSend)} ETH!`, "success");
+          setTimeout(fetchGameState, 2000);
+
+      } catch (e) {
+          console.error(e);
+          // Display the actual error message for better debugging
+          showInfo("Withdrawal Failed", e.shortMessage || e.message || "Unknown error", "error");
+      } finally {
+          setIsWriting(false);
+      }
   };
 
-  const handleClaimPot = async () => {
-    try {
-      setIsWriting(true);
-      const client = await getSigner();
-      const [address] = await client.getAddresses();
-      
-      await client.writeContract({
-        address: CONTRACT_ADDRESS, 
-        abi: CONTRACT_ABI, 
-        functionName: 'claimPot',
-        account: address
-      });
-      
-      alert("POT CLAIMED! CONGRATULATIONS!");
-      setIsWriting(false);
-      fetchGameState();
-    } catch (error) {
-      setIsWriting(false);
-      alert("Claim Failed: " + (error.shortMessage || error.message));
-    }
+  // --- START GAME ---
+  const handleStartGame = async () => {
+      if (parseFloat(burnerBalance) < parseFloat(ENTRY_FEE)) {
+          showInfo("Low Balance", "Top Up Game Wallet to play.", "error");
+          return;
+      }
+      try {
+          setIsGameActive(true); 
+          setShowResult(false);
+          const pKey = localStorage.getItem("stack_burner_key");
+          const account = privateKeyToAccount(pKey);
+          const client = createWalletClient({ account, chain: abstractChain, transport: http() });
+          
+          client.writeContract({
+             address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'startGame',
+             value: parseEther(ENTRY_FEE)
+          });
+      } catch (e) {
+          setIsGameActive(false);
+          showInfo("Error", "Could not start session.", "error");
+      }
   };
 
-  const handleStartGame = () => {
-    if (credits > 0) {
-        setIsGameActive(true); 
-    } else {
-        alert("No Credits! Buy some to enter.");
-    }
-  };
-
+  // --- GAME OVER ---
   const handleGameOver = async (score, biometrics) => {
     setIsGameActive(false);
     if (score === 0 || !biometrics) return;
-    setCredits(prev => Math.max(0, prev - 1));
+
+    setLastScore(score);
+    setShowResult(true);
+    setIsRecordingScore(true);
 
     try {
-        setIsWriting(true);
-        const wallet = wallets[0];
+        const pKey = localStorage.getItem("stack_burner_key");
+        const account = privateKeyToAccount(pKey); 
+        
         const response = await fetch(BACKEND_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                userAddress: wallet.address,
+                userAddress: account.address, 
                 gameData: { score, duration: biometrics.duration, clickOffsets: biometrics.clickOffsets }
             })
         });
-
         const data = await response.json();
-        if (!data.success) throw new Error("Security Check Failed: " + data.message);
+        if (!data.success) throw new Error(data.message);
 
-        const client = await getSigner();
+        const client = createWalletClient({ account, chain: abstractChain, transport: http() });
         await client.writeContract({
-            address: CONTRACT_ADDRESS, 
-            abi: CONTRACT_ABI, 
-            functionName: 'submitScore',
-            account: wallet.address, 
+            address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'submitScore',
             args: [BigInt(score), data.signature]
         });
-
-        alert("Score Verified & Submitted to Chain!");
+        
         fetchGameState();
+        setTimeout(() => setIsRecordingScore(false), 1000); 
     } catch (error) {
-        console.error("Submission Error", error);
-        alert("Error submitting score: " + error.message);
-    } finally {
-        setIsWriting(false);
+        console.error(error);
+        setIsRecordingScore(false);
+        setShowResult(false);
+        showInfo("Error", "Submission failed.", "error");
     }
   };
 
-  // --- RENDER WITH SEMANTIC UI LABELS ---
   return (
-    <div className="app-container ui-app-container">
-      
-      {/* TOP BAR */}
-      <div className="top-bar ui-top-bar">
-        <div className="logo ui-logo">
-            STACK <span className="highlight ui-logo-highlight">ULTIMATE</span>
-        </div>
-        
-        <div className="ticker ui-ticker">
-           <span className="ui-ticker-item ui-ticker-credits">🎟 {credits}</span>
-           <span className="ui-ticker-divider">&nbsp;|&nbsp;</span> 
-           <span className="ui-ticker-item ui-ticker-target">🎯 TARGET: {targetScore}</span>
-           <span className="ui-ticker-divider">&nbsp;|&nbsp;</span>
-           <span className="ui-ticker-item ui-ticker-pot">💰 {potSize} ETH</span>
-        </div>
+    <div className="ui-app-container">
+      <Modal isOpen={infoModal.open} onClose={() => setInfoModal({...infoModal, open: false})} title={infoModal.title} type={infoModal.type}>{infoModal.content}</Modal>
+      {showResult && <GameOverModal score={lastScore} isRecording={isRecordingScore} onClose={() => setShowResult(false)} onReplay={handleStartGame} />}
 
-        {authenticated ? (
-          <button onClick={logout} className="connect-btn ui-btn-logout">
-            {user?.wallet?.address.substring(0,6)}... (LOGOUT)
-          </button>
-        ) : (
-          <button onClick={login} className="connect-btn ui-btn-login">
-            LOGIN
-          </button>
-        )}
+      <div className="ui-top-bar">
+        <div className="ui-logo">STACK <span className="ui-highlight">ULTIMATE</span></div>
+        <div className="ui-ticker">💰 POT: {potSize} ETH &nbsp;|&nbsp; 🎮 WALLET: {Number(burnerBalance).toFixed(5)} ETH</div>
+        {authenticated ? <button onClick={logout} className="ui-btn-connect">LOGOUT</button> : <button onClick={login} className="ui-btn-connect">LOGIN</button>}
       </div>
 
-      {/* MAIN ARENA */}
-      <div className="arena ui-arena">
+      <div className="ui-arena">
         {!authenticated ? (
-          // STATE: LOGGED OUT
-          <div className="welcome-card ui-card-welcome">
-            <h1 className="ui-welcome-title">PROOF OF SKILL</h1>
-            <p className="ui-welcome-subtitle">Login to Play</p>
-            <button onClick={login} className="play-btn ui-btn-hero-login">LOGIN</button>
-          </div>
+            <div className="ui-card-welcome"><h1>PROOF OF SKILL</h1><button onClick={login} className="ui-btn-play">LOGIN</button></div>
         ) : (
           <>
-            {/* STATE: LOBBY */}
             {!isGameActive ? (
-              <div className="lobby-card ui-card-lobby">
-                
-                <div className="stats-row ui-stats-row">
-                  <div className="stat-box ui-stat-box ui-stat-pot">
-                    <div className="label ui-label">POT</div>
-                    <div className="value glow-green ui-value ui-value-pot">{potSize} ETH</div>
-                  </div>
-                  <div className="stat-box ui-stat-box ui-stat-highscore">
-                    <div className="label ui-label">HIGH SCORE</div>
-                    <div className="value ui-value ui-value-highscore">{highScore}</div>
-                  </div>
+              <div className="ui-card-lobby">
+                <div className="ui-stats-row">
+                  <div className="ui-stat-box"><div className="ui-label">TARGET</div><div className="ui-value">{targetScore}</div></div>
+                  <div className="ui-stat-box"><div className="ui-label">HIGH SCORE</div><div className="ui-value">{highScore}</div></div>
                 </div>
-
-                {/* KING STATUS SECTION */}
-                {king.toLowerCase() === user?.wallet?.address.toLowerCase() && Number(highScore) > targetScore ? (
-                    <div className="king-status ui-section-king-active" style={{marginBottom: '15px', padding: '10px', border: '1px solid gold', borderRadius: '8px'}}>
-                        <h3 className="ui-text-king-title" style={{color: 'gold', margin: '5px 0'}}>👑 YOU ARE THE KING! 👑</h3>
-                        <p className="ui-text-king-subtitle" style={{fontSize: '12px', color: '#aaa'}}>Wait for 48h or challenge to end</p>
-                        <button className="buy-btn ui-btn-claim" style={{background: 'gold', color: 'black', marginTop: '10px'}} onClick={handleClaimPot} disabled={isWriting}>
-                            {isWriting ? "CLAIMING..." : "CLAIM POT NOW"}
-                        </button>
-                    </div>
-                ) : (
-                    <div className="king-display ui-section-king-passive">
-                        Current King: <span className="ui-text-king-address">{king.substring(0,8)}...</span>
-                    </div>
-                )}
-
-                <div className="divider ui-divider"></div>
-
-                {/* PLAY BUTTON AREA */}
-                {credits > 0 ? (
-                    <div className="action-area ui-action-area">
-                        <button className="play-btn ui-btn-play" onClick={handleStartGame}>
-                          PLAY NOW ({credits})
-                        </button>
-                    </div>
-                ) : null}
-
-                {/* TICKET SHOP AREA */}
-                <div className="ticket-shop ui-section-shop">
-                    <div className="ticket-controls ui-shop-controls">
-                        <button className="control-btn ui-btn-shop-minus" onClick={() => setBuyAmount(Math.max(1, buyAmount - 1))}>-</button>
+                
+                <div className="ui-shop-section" style={{marginTop: '20px', padding: '20px', border: '1px solid #444', borderRadius: '10px', background: 'rgba(0,0,0,0.3)'}}>
+                    <div style={{marginBottom: '15px', color: '#aaa', fontSize: '0.9rem', letterSpacing: '1px', textTransform: 'uppercase'}}>In-Game Wallet</div>
+                    <div className="ui-value" style={{fontSize: '2rem', marginBottom: '20px', color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.1)'}}>{Number(burnerBalance).toFixed(5)} ETH</div>
+                    
+                    {/* DEPOSIT */}
+                    <div style={{display: 'flex', gap: '10px', marginBottom: '15px'}}>
                         <input 
                             type="number" 
-                            className="ticket-input ui-input-shop-amount" 
-                            value={buyAmount} 
-                            onChange={(e) => setBuyAmount(Number(e.target.value))} 
-                            min="1" max="50"
+                            value={depositAmount}
+                            onChange={(e) => setDepositAmount(e.target.value)}
+                            step="0.001"
+                            style={{
+                                background: '#222', border: '1px solid #555', color: 'white', 
+                                padding: '10px', borderRadius: '5px', width: '100px', textAlign: 'center'
+                            }}
                         />
-                        <button className="control-btn ui-btn-shop-plus" onClick={() => setBuyAmount(Math.min(50, buyAmount + 1))}>+</button>
+                        <button className="ui-btn-buy" onClick={handleTopUp} disabled={isWriting} style={{flex: 1, fontSize: '0.9rem'}}>
+                           ⬇ DEPOSIT
+                        </button>
                     </div>
-                    
-                    <button className="buy-btn ui-btn-buy" onClick={handleBuyCredits} disabled={isWriting}>
-                       {isWriting ? "CONFIRMING..." : `BUY CREDITS ${(buyAmount * 0.00001).toFixed(5)} ETH`}
+
+                    {/* WITHDRAW */}
+                    <button className="ui-btn-buy" onClick={handleWithdraw} disabled={isWriting} style={{width: '100%', background: '#333', border: '1px solid #555', fontSize: '0.9rem', marginBottom: '20px'}}>
+                           ⬆ WITHDRAW ALL
                     </button>
+                    
+                    <div style={{height: '1px', background: '#333', marginBottom: '20px'}}></div>
+
+                    {/* PLAY */}
+                    <button className="ui-btn-play" style={{width: '100%', padding: '15px', fontSize: '1.2rem'}} onClick={handleStartGame} disabled={isWriting || parseFloat(burnerBalance) < parseFloat(ENTRY_FEE)}>
+                        PLAY FOR POT ({ENTRY_FEE} ETH)
+                    </button>
+                    
+                    <div className="ui-text-warning" style={{marginTop:'10px', fontSize: '0.8rem', opacity: 0.7}}>
+                        Session Secured. No Popups.
+                    </div>
                 </div>
               </div>
             ) : (
-              // STATE: PLAYING GAME
               <Game gameActive={isGameActive} onGameOver={handleGameOver} />
             )}
           </>
@@ -272,5 +296,4 @@ function App() {
     </div>
   );
 }
-
 export default App;

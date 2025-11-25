@@ -1,4 +1,4 @@
-export const CONTRACT_ADDRESS = "0x0aE4B7B6c45040Ef0527fec2E2D6f487E0D0e6C1";
+export const CONTRACT_ADDRESS = "0x2Ad4C5B66b10db3422Aee6717e37cF59c1B3fDCD";
 
 export const CONTRACT_ABI = [
 	{
@@ -71,13 +71,13 @@ export const CONTRACT_ABI = [
 				"type": "address"
 			},
 			{
-				"indexed": false,
+				"indexed": true,
 				"internalType": "uint256",
-				"name": "amount",
+				"name": "gameId",
 				"type": "uint256"
 			}
 		],
-		"name": "CreditPurchased",
+		"name": "GameStarted",
 		"type": "event"
 	},
 	{
@@ -177,45 +177,6 @@ export const CONTRACT_ABI = [
 	},
 	{
 		"inputs": [],
-		"name": "INITIAL_TARGET",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "RESET_DURATION",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "TARGET_INCREASE",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
 		"name": "WINNER_SPLIT_BPS",
 		"outputs": [
 			{
@@ -242,48 +203,9 @@ export const CONTRACT_ABI = [
 	},
 	{
 		"inputs": [],
-		"name": "buyCredits",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
 		"name": "claimPot",
 		"outputs": [],
 		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "creditPrice",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "credits",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
 		"type": "function"
 	},
 	{
@@ -314,6 +236,19 @@ export const CONTRACT_ABI = [
 	},
 	{
 		"inputs": [],
+		"name": "entryFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
 		"name": "gameServerSigner",
 		"outputs": [
 			{
@@ -327,12 +262,12 @@ export const CONTRACT_ABI = [
 	},
 	{
 		"inputs": [],
-		"name": "lastWinTime",
+		"name": "owner",
 		"outputs": [
 			{
-				"internalType": "uint256",
+				"internalType": "address",
 				"name": "",
-				"type": "uint256"
+				"type": "address"
 			}
 		],
 		"stateMutability": "view",
@@ -346,25 +281,12 @@ export const CONTRACT_ABI = [
 				"type": "address"
 			}
 		],
-		"name": "nonces",
+		"name": "playerGameIds",
 		"outputs": [
 			{
 				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "owner",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
 			}
 		],
 		"stateMutability": "view",
@@ -401,11 +323,11 @@ export const CONTRACT_ABI = [
 		"inputs": [
 			{
 				"internalType": "uint256",
-				"name": "_price",
+				"name": "_fee",
 				"type": "uint256"
 			}
 		],
-		"name": "setCreditPrice",
+		"name": "setEntryFee",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -421,6 +343,26 @@ export const CONTRACT_ABI = [
 		"name": "setSigner",
 		"outputs": [],
 		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_target",
+				"type": "uint256"
+			}
+		],
+		"name": "setTargetScore",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "startGame",
+		"outputs": [],
+		"stateMutability": "payable",
 		"type": "function"
 	},
 	{

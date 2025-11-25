@@ -2,14 +2,18 @@ import React, { useEffect, useRef } from "react";
 
 const Game = ({ gameActive, onGameOver }) => {
   const iframeRef = useRef(null);
-  
+
   useEffect(() => {
     const handleMessage = (event) => {
+      // SENTINEL DEBUG: Log incoming messages
+      console.log("Iframe Message Received:", event.data);
+
       if (event.data && event.data.type === "GAME_OVER") {
-        // SENTINEL: Extract biometrics
         const { score, biometrics } = event.data;
-        console.log("Game Over. Evidence captured:", biometrics);
-        onGameOver(score, biometrics);
+        
+        if (score > 0) {
+             onGameOver(score, biometrics);
+        }
       }
     };
 
@@ -26,7 +30,7 @@ const Game = ({ gameActive, onGameOver }) => {
   if (!gameActive) return null;
 
   return (
-    <div className="game-overlay" style={{
+    <div className="ui-game-overlay" style={{
         position: 'fixed',
         top: 0,
         left: 0,
@@ -43,7 +47,8 @@ const Game = ({ gameActive, onGameOver }) => {
         scrolling="no"
       />
        <button 
-        onClick={() => onGameOver(0, null)} // Manual Exit
+        onClick={() => onGameOver(0, null)} 
+        className="ui-btn-exit"
         style={{
             position:'absolute', top: 20, right: 20, 
             padding: '10px 20px', background:'red', color:'white', 

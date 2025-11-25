@@ -1,28 +1,31 @@
+// public/game/script.js
+
 window.startGame = startGame;
 window.focus();
 
+// --- GLOBALS ---
 let camera, scene, renderer;
 let world;
 let lastTime;
 let stack;
 let overhangs;
 
-// --- SENTINEL: BIOMETRIC DATA ---
-let clickOffsets = []; // Stores the accuracy of every click
-let startTime = 0;     // Tracks game duration
+// --- SENTINEL BIOMETRICS ---
+let clickOffsets = [];
+let startTime = 0;
 
-// --- VISUAL TUNING ---
-const boxHeight = 0.8; 
-const originalBoxSize = 4; 
+// --- CONFIGURATION ---
+const boxHeight = 1;
+const originalBoxSize = 4;
+const GAME_SPEED = 0.004; // FIX: Smooth, playable speed
+const CAMERA_WIDTH = 22;  // FIX: Zoomed in for better visibility (was 30)
 
+// --- STATE ---
 let autoplay = false;
 let gameEnded;
-let robotPrecision;
 let isPlaying = false;
 let animationId = null;
-
-// Color State
-let hue = 0; 
+let hue = 0;
 
 const scoreElement = document.getElementById("score");
 const instructionsElement = document.getElementById("instructions");
@@ -36,41 +39,41 @@ function init() {
   lastTime = 0;
   stack = [];
   overhangs = [];
-  hue = 200; 
-  
-  // Sentinel Reset
+  hue = 200; // Start Blue
+
+  // SENTINEL RESET
   clickOffsets = [];
   startTime = 0;
 
-  // 1. PHYSICS
+  // 1. PHYSICS SETUP
   world = new CANNON.World();
-  world.gravity.set(0, -15, 0); 
+  world.gravity.set(0, -30, 0); // Heavy Gravity for snappy falls
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
-  // 2. CAMERA
+  // 2. CAMERA (FIXED ANGLE)
   const aspect = window.innerWidth / window.innerHeight;
-  const width = 25; 
-  const height = width / aspect;
+  const height = CAMERA_WIDTH / aspect;
 
   camera = new THREE.OrthographicCamera(
-    width / -2, width / 2, height / 2, height / -2, 0, 100
+    CAMERA_WIDTH / -2, CAMERA_WIDTH / 2, height / 2, height / -2, 0, 100
   );
-
+  
+  // Standard Isometric View
   camera.position.set(4, 4, 4);
   camera.lookAt(0, 0, 0);
 
+  // 3. SCENE & LIGHTING
   scene = new THREE.Scene();
   scene.background = new THREE.Color(`hsl(${hue}, 20%, 80%)`);
-  
+
   addLayer(0, 0, originalBoxSize, originalBoxSize);
   addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
 
-  // 4. LIGHTING
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); 
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
   dirLight.position.set(10, 20, 0);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.width = 2048;
@@ -85,15 +88,14 @@ function init() {
 
 function startGame() {
   if (animationId) cancelAnimationFrame(animationId);
-  
   isPlaying = true;
   gameEnded = false;
   lastTime = 0;
   stack = [];
   overhangs = [];
-  hue = 200; 
+  hue = 200;
   
-  // SENTINEL: Start Recording
+  // START TRACKING
   clickOffsets = [];
   startTime = Date.now();
 
@@ -112,18 +114,24 @@ function startGame() {
       scene.remove(mesh);
     }
     
+    // Reset Background
     scene.background = new THREE.Color(`hsl(${hue}, 20%, 80%)`);
-    
     addLayer(0, 0, originalBoxSize, originalBoxSize);
     addLayer(-10, 0, originalBoxSize, originalBoxSize, "x");
   }
 
+  // Reset Camera Position
   if (camera) {
+    const aspect = window.innerWidth / window.innerHeight;
+    const height = CAMERA_WIDTH / aspect;
+    camera.left = CAMERA_WIDTH / -2;
+    camera.right = CAMERA_WIDTH / 2;
+    camera.top = height / 2;
+    camera.bottom = height / -2;
     camera.position.set(4, 4, 4);
     camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
   }
-  
-  if (scoreElement) scoreElement.style.color = '#333';
 }
 
 function addLayer(x, z, width, depth, direction) {
@@ -150,13 +158,22 @@ function generateBox(x, y, z, width, depth, falls) {
   scene.add(mesh);
 
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
-  let mass = falls ? 5 : 0;
+  
+  // HEAVY MASS = GOOD PHYSICS
+  let mass = falls ? 50 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
+
   const body = new CANNON.Body({ mass, shape });
   body.position.set(x, y, z);
-  world.addBody(body);
+  
+  // Tumble Effect
+  if (falls) {
+      const spin = Math.random() * 5;
+      body.angularVelocity.set(spin, 0, spin);
+  }
 
+  world.addBody(body);
   return { threejs: mesh, cannonjs: body, width, depth };
 }
 
@@ -183,22 +200,13 @@ function cutBox(topLayer, overlap, size, delta) {
 function animation() {
   if (lastTime) {
     const timePassed = performance.now() - lastTime;
-    const speed = 0.008 * timePassed;
-
     const topLayer = stack[stack.length - 1];
-    const previousLayer = stack[stack.length - 2];
-
-    const boxShouldMove =
-      !gameEnded &&
-      (!autoplay ||
-        (autoplay &&
-          topLayer.threejs.position[topLayer.direction] <
-            previousLayer.threejs.position[topLayer.direction] +
-              robotPrecision));
+    const boxShouldMove = !gameEnded && !autoplay;
 
     if (boxShouldMove) {
-      const movePos = Math.sin(Date.now() * 0.002) * 5; 
-
+      // FIX: Use GAME_SPEED constant for consistent gameplay
+      const movePos = Math.sin(Date.now() * GAME_SPEED) * 5; 
+      
       if (topLayer.direction === 'x') {
         topLayer.threejs.position.x = movePos;
         topLayer.cannonjs.position.x = movePos;
@@ -206,8 +214,9 @@ function animation() {
         topLayer.threejs.position.z = movePos;
         topLayer.cannonjs.position.z = movePos;
       }
-    } 
+    }
 
+    // Camera follow logic
     const targetY = boxHeight * (stack.length - 2) + 4;
     camera.position.y += (targetY - camera.position.y) * 0.1;
 
@@ -237,17 +246,16 @@ function missedTheSpot() {
   
   const finalScore = stack.length - 1; 
   const duration = Date.now() - startTime;
-
+  
+  console.log("Game Over. Sending Score:", finalScore);
+  
   if (finalScore > 0) {
-      // SENTINEL: Send Score + Biometrics to React
-      window.parent.postMessage({ 
+      const payload = { 
           type: "GAME_OVER", 
           score: finalScore,
-          biometrics: {
-              duration: duration,
-              clickOffsets: clickOffsets
-          }
-      }, "*");
+          biometrics: { duration, clickOffsets }
+      };
+      window.parent.postMessage(payload, "*");
   }
 }
 
@@ -264,25 +272,18 @@ function splitBlockAndAddNextOneIfOverlaps() {
   if (overlap > 0) {
     cutBox(topLayer, overlap, size, delta);
     
-    // SENTINEL: Record accuracy (The smaller the delta, the better)
+    // CAPTURE OFFSET
     clickOffsets.push(delta);
 
-    hue += 4; 
+    hue += 4;
     scene.background = new THREE.Color(`hsl(${hue}, 20%, 80%)`);
-    if(scoreElement) scoreElement.style.color = `hsl(${hue}, 50%, 30%)`;
-
-    const overhangShift = (overlap / 2 + (overhangSize / 2)) * Math.sign(delta);
-    const overhangX = direction == "x" ? topLayer.threejs.position.x + overhangShift : topLayer.threejs.position.x;
-    const overhangZ = direction == "z" ? topLayer.threejs.position.z + overhangShift : topLayer.threejs.position.z;
-    const overhangWidth = direction == "x" ? overhangSize : topLayer.width;
-    const overhangDepth = direction == "z" ? overhangSize : topLayer.depth;
     
-    const nextX = direction == "x" ? topLayer.threejs.position.x : -15; 
+    const nextX = direction == "x" ? topLayer.threejs.position.x : -15;
     const nextZ = direction == "z" ? topLayer.threejs.position.z : -15;
     const newWidth = topLayer.width;
     const newDepth = topLayer.depth;
     const nextDirection = direction == "x" ? "z" : "x";
-
+    
     if (scoreElement) scoreElement.innerText = stack.length - 1;
     addLayer(nextX, nextZ, newWidth, newDepth, nextDirection);
   } else {
@@ -291,13 +292,11 @@ function splitBlockAndAddNextOneIfOverlaps() {
 }
 
 window.addEventListener("mousedown", (e) => {
-    if (e.target.classList.contains('start-btn')) return;
     if (isPlaying) {
         e.preventDefault();
         splitBlockAndAddNextOneIfOverlaps();
     }
 });
-
 window.addEventListener("keydown", (event) => {
   if (event.code === "Space" || event.key === " ") {
     event.preventDefault();
@@ -305,13 +304,11 @@ window.addEventListener("keydown", (event) => {
     else if (!gameEnded && document.getElementById("instructions").style.display !== "none") startGame();
   }
 });
-
 window.addEventListener("resize", () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const width = 25;
-  const height = width / aspect;
-  camera.left = width / -2;
-  camera.right = width / 2;
+  const height = CAMERA_WIDTH / aspect;
+  camera.left = CAMERA_WIDTH / -2;
+  camera.right = CAMERA_WIDTH / 2;
   camera.top = height / 2;
   camera.bottom = height / -2;
   camera.updateProjectionMatrix();
