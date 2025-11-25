@@ -58,7 +58,7 @@ function init() {
 
   // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(0, -50, 0); 
+  world.gravity.set(0, -150, 0); 
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
@@ -198,7 +198,7 @@ function generateBox(x, y, z, width, depth, falls) {
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
   
   // Mass 1 + Damping
-  let mass = falls ? 1 : 0;
+  let mass = falls ? 10 : 0;
   mass *= width / originalBoxSize;
   mass *= depth / originalBoxSize;
 
@@ -207,7 +207,7 @@ function generateBox(x, y, z, width, depth, falls) {
   
   if (falls) {
       body.angularVelocity.set(0, 0, 0); 
-      body.linearDamping = 0.9; 
+      body.linearDamping = 0.5; 
   }
 
   world.addBody(body);
