@@ -17,8 +17,8 @@ let startTime = 0;
 
 // --- CONFIGURATION ---
 // CHANGE 1: 33% LARGER (Titan Scale)
-const boxHeight = 6.5;          
-const originalBoxSize = 70;   
+const boxHeight = 15;          
+const originalBoxSize = 150;   
 
 // SPEED CONFIG
 const BASE_SPEED = 0.0005;      
@@ -57,7 +57,7 @@ function init() {
 
   // 1. PHYSICS
   world = new CANNON.World();
-  world.gravity.set(0, -50, 0); 
+  world.gravity.set(0, -10, 0); 
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 40;
 
