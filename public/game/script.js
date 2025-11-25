@@ -16,8 +16,8 @@ let clickOffsets = [];
 let startTime = 0;
 
 // --- CONFIGURATION ---
-const boxHeight = 9;          // Thick Slabs
-const originalBoxSize = 45;   // Massive Blocks
+const boxHeight = 10;          // Thick Slabs
+const originalBoxSize = 65;   // Massive Blocks
 
 // SPEED
 const BASE_SPEED = 0.0005;      
@@ -26,9 +26,10 @@ const SPEED_INTERVAL = 4;
 
 // VISUALS
 // CHANGE: ZOOMED IN (Was 150 -> Now 100)
+// TRAVELS 10 = high route for block
 // This makes the blocks look larger/closer without clipping
 const ZOOM_SCALE = 100;       
-const TRAVEL_DISTANCE = 20;    
+const TRAVEL_DISTANCE = 10;    
 const CAMERA_OFFSET_Y = 200;
 
 // --- STATE ---
