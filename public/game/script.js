@@ -21,7 +21,7 @@ const originalBoxSize = 50;   // Massive Blocks
 
 // SPEED
 const BASE_SPEED = 0.0005;      
-const SPEED_INCREMENT = 0.0002; 
+const SPEED_INCREMENT = 0.0001; 
 const SPEED_INTERVAL = 4;       
 
 // VISUALS
